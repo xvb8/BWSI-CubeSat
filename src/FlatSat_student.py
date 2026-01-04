@@ -14,6 +14,7 @@ You will need to complete the take_photo() function and configure the VARIABLES 
 #DATE:
 
 #import libraries
+import math
 import time
 import board
 from adafruit_lsm6ds.lsm6dsox import LSM6DSOX as LSM6DS
@@ -31,6 +32,8 @@ i2c = board.I2C()
 accel_gyro = LSM6DS(i2c)
 mag = LIS3MDL(i2c)
 picam2 = Picamera2()
+picam2.options["quality"] = 90
+picam2.options["compress_level"] = 3
 
 
 def git_push():
@@ -64,21 +67,22 @@ def img_gen(name):
     return imgname
 
 
-def take_photo():
+def take_photo(delay_sec: float = 3):
     """
-    This function is NOT complete. Takes a photo when the FlatSat is shaken.
-    Replace psuedocode with your own code.
+    Takes a photo when the FlatSat is shaken above magnitude THRESHOLD.
+    
+    :param delay_sec: Description
+    :type delay_sec: float
     """
     while True:
         accelx, accely, accelz = accel_gyro.acceleration
 
-        #CHECKS IF READINGS ARE ABOVE THRESHOLD
-            #PAUSE
-            #name = ""     #First Name, Last Initial  ex. MasonM
-            #TAKE PHOTO
-            #PUSH PHOTO TO GITHUB
-        
-        #PAUSE
+        if math.sqrt(accelx ** 2 + accely ** 2 + accelz ** 2) > THRESHOLD: # If the magnitude of the shake is above a given value
+            time.sleep(delay_sec)
+            name = "KaranK"
+            picam2.capture_file(img_gen(name)) # Capture an image after a delay and save it as a JPG.
+            git_push()
+
 
 
 def main():
