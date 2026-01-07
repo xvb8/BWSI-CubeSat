@@ -64,6 +64,7 @@ def img_gen(name):
     """
     t = time.strftime("_%H%M%S")
     imgname = (f'{REPO_PATH}/{FOLDER_PATH}/{name}{t}.jpg')
+    print(f'Image name: {imgname}')
     return imgname
 
 
@@ -81,7 +82,9 @@ def take_photo(delay_sec: float = 3):
             time.sleep(delay_sec)
             name = "KaranK"
             picam2.capture_file(img_gen(name)) # Capture an image after a delay and save it as a JPG.
+            print("Photo taken!")
             git_push()
+            print("Photo uploaded to GitHub!")
 
 
 
