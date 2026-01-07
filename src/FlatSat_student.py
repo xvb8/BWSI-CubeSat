@@ -75,19 +75,19 @@ def take_photo(delay_sec: float = 3):
     :param delay_sec: Description
     :type delay_sec: float
     """
-    while True:
-        accelx, accely, accelz = accel_gyro.acceleration
+    #while True:
+    accelx, accely, accelz = accel_gyro.acceleration
 
-        if math.sqrt(accelx ** 2 + accely ** 2 + accelz ** 2) > THRESHOLD: # If the magnitude of the shake is above a given value
-            time.sleep(delay_sec)
-            name = "KaranK"
-            image = picam2.capture_file(img_gen(name)) # Capture an image after a delay and save it as a JPG.
-            print(image)
-            with open(img_gen(name), "w") as img_file:
-                img_file.write(image)
-            print("Photo taken!")
-            git_push()
-            print("Photo uploaded to GitHub!")
+    if math.sqrt(accelx ** 2 + accely ** 2 + accelz ** 2) > THRESHOLD: # If the magnitude of the shake is above a given value
+        time.sleep(delay_sec)
+        name = "KaranK"
+        image = picam2.capture_file(img_gen(name)) # Capture an image after a delay and save it as a JPG.
+        print(image)
+        with open(img_gen(name), "w") as img_file:
+            img_file.write(image)
+        print("Photo taken!")
+        git_push()
+        print("Photo uploaded to GitHub!")
 
 
 
