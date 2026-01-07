@@ -82,6 +82,7 @@ def take_photo(delay_sec: float = 3):
             time.sleep(delay_sec)
             name = "KaranK"
             image = picam2.capture_file(img_gen(name)) # Capture an image after a delay and save it as a JPG.
+            print(image)
             with open(img_gen(name), "w") as img_file:
                 img_file.write(image)
             print("Photo taken!")
