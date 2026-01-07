@@ -23,7 +23,7 @@ from git import Repo
 from picamera2 import Picamera2
 
 #VARIABLES
-THRESHOLD = 0      #Any desired value from the accelerometer
+THRESHOLD = -1      #Any desired value from the accelerometer
 REPO_PATH = " /home/pi/BWSI-CubeSat"     #Your github repo path: ex. /home/pi/FlatSatChallenge
 FOLDER_PATH = "images"   #Your image folder path in your GitHub repo: ex. /Images
 
@@ -93,6 +93,7 @@ def take_photo(delay_sec: float = 3):
 
 def main():
     take_photo()
+    print(accel_gyro.acceleration)
 
 
 if __name__ == '__main__':
