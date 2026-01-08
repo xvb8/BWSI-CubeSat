@@ -15,6 +15,7 @@ You will need to complete the take_photo() function and configure the VARIABLES 
 
 #import libraries
 import math
+import os
 import time
 import board
 from adafruit_lsm6ds.lsm6dsox import LSM6DSOX as LSM6DS
@@ -24,7 +25,7 @@ from picamera2 import Picamera2
 
 #VARIABLES
 THRESHOLD = -1      #Any desired value from the accelerometer
-REPO_PATH = " /home/pi/BWSI-CubeSat"     #Your github repo path: ex. /home/pi/FlatSatChallenge
+REPO_PATH = "/home/pi/BWSI-CubeSat"     #Your github repo path: ex. /home/pi/FlatSatChallenge
 FOLDER_PATH = "images"   #Your image folder path in your GitHub repo: ex. /Images
 
 #imu and camera initialization
@@ -83,12 +84,16 @@ def take_photo(delay_sec: float = 3):
     if math.sqrt(accelx ** 2 + accely ** 2 + accelz ** 2) > THRESHOLD: # If the magnitude of the shake is above a given value
         time.sleep(delay_sec)
         name = "KaranK"
-        print("line 84")
+        print("line 87")
+        if not os.path.exists(img_gen(name)):
+            try:
+                os.makedirs(img_gen(name)) # Make the images directory if it doesn't exist
+            except OSError:
+                print("Creation of the directory failed")
         image = picam2.capture_file(img_gen(name)) # Capture an image after a delay and save it as a JPG.
-        print("line 86")
+        print("line 94")
         print(image)
-        with open(img_gen(name), "w") as img_file:
-            img_file.write(image)
+
         print("Photo taken!")
         git_push()
         print("Photo uploaded to GitHub!")
