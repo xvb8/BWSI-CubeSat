@@ -26,7 +26,7 @@ from picamera2 import Picamera2
 #VARIABLES
 THRESHOLD = -1      #Any desired value from the accelerometer
 REPO_PATH = "/home/pi/BWSI-CubeSat"     #Your github repo path: ex. /home/pi/FlatSatChallenge
-FOLDER_PATH = "images"   #Your image folder path in your GitHub repo: ex. /Images
+FOLDER_PATH = "/images"   #Your image folder path in your GitHub repo: ex. /Images
 
 #imu and camera initialization
 i2c = board.I2C()
