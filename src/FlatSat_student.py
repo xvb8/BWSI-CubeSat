@@ -34,7 +34,9 @@ mag = LIS3MDL(i2c)
 picam2 = Picamera2()
 picam2.options["quality"] = 90
 picam2.options["compress_level"] = 3
-
+config = picam2.create_still_configuration()
+picam2.configure(config)
+picam2.start()
 
 def git_push():
     """
@@ -83,7 +85,7 @@ def take_photo(delay_sec: float = 3):
         name = "KaranK"
         print("line 84")
         image = picam2.capture_file(img_gen(name)) # Capture an image after a delay and save it as a JPG.
-        print("line 85")
+        print("line 86")
         print(image)
         with open(img_gen(name), "w") as img_file:
             img_file.write(image)
