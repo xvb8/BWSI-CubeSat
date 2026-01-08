@@ -67,9 +67,10 @@ def img_gen(name):
         name (str): your name ex. MasonM
     """
     t = time.strftime("_%H%M%S")
-    imgname = (f'{REPO_PATH}/{FOLDER_PATH}/{name}{t}.jpg')
-    print(f'Image name: {imgname}')
-    return imgname
+    imgname_dir = (f'{REPO_PATH}/{FOLDER_PATH}/')
+    imgname_file = (f"{name}{t}.jpg")
+    print(f'Image name: {imgname_dir + imgname_file}')
+    return {"dir": imgname_dir, "file": imgname_file}
 
 
 def take_photo(delay_sec: float = 3):
@@ -79,21 +80,24 @@ def take_photo(delay_sec: float = 3):
     :param delay_sec: Description
     :type delay_sec: float
     """
+    name = "KaranK"
+    filename = img_gen(name)
+
     #while True:
     accelx, accely, accelz = accel_gyro.acceleration
 
     if math.sqrt(accelx ** 2 + accely ** 2 + accelz ** 2) > THRESHOLD: # If the magnitude of the shake is above a given value
         time.sleep(delay_sec)
-        name = "KaranK"
-        print("line 87")
-        if not os.path.exists(img_gen(name)):
-            try:
-                os.makedirs(img_gen(name)) # Make the images directory if it doesn't exist
-            except OSError:
-                print("Creation of the directory failed")
-        image = picam2.capture_file("test.jpg") # Capture an image after a delay and save it as a JPG.
-        print("line 94")
-        print(image)
+        
+        print("line 89")
+        # if not os.path.exists(filename["dir"]):
+        #     try:
+        #         os.makedirs(filename["dir"]) # Make the images directory if it doesn't exist
+        #     except OSError:
+        #         print("Creation of the directory failed")
+        # os.chdir(img_gen) # Change to the images directory
+        picam2.capture_file(filename["dir"] + filename["file"]) # Capture an image after a delay and save it as a JPG.
+        print("line 96")
 
         print("Photo taken!")
         git_push()
