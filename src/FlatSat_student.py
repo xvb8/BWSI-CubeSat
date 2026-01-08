@@ -90,7 +90,7 @@ def take_photo(delay_sec: float = 3):
                 os.makedirs(img_gen(name)) # Make the images directory if it doesn't exist
             except OSError:
                 print("Creation of the directory failed")
-        image = picam2.capture_file(img_gen(name)) # Capture an image after a delay and save it as a JPG.
+        image = picam2.capture_file("test.jpg") # Capture an image after a delay and save it as a JPG.
         print("line 94")
         print(image)
 
