@@ -81,7 +81,9 @@ def take_photo(delay_sec: float = 3):
     if math.sqrt(accelx ** 2 + accely ** 2 + accelz ** 2) > THRESHOLD: # If the magnitude of the shake is above a given value
         time.sleep(delay_sec)
         name = "KaranK"
+        print("line 84")
         image = picam2.capture_file(img_gen(name)) # Capture an image after a delay and save it as a JPG.
+        print("line 85")
         print(image)
         with open(img_gen(name), "w") as img_file:
             img_file.write(image)
