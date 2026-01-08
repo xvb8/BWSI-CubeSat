@@ -82,21 +82,21 @@ def take_photo(delay_sec: float = 3, reading_delay_sec: float = 0.4):
     name = "KaranK"
     filename = img_gen(name)
 
-    #while True:
-    accelx_1, accely_1, accelz_1 = accel_gyro.acceleration
-    time.sleep(reading_delay_sec) # Small delay to get a second reading
-    accelx_2, accely_2, accelz_2 = accel_gyro.acceleration
+    while True:
+        accelx_1, accely_1, accelz_1 = accel_gyro.acceleration
+        time.sleep(reading_delay_sec) # Small delay to get a second reading
+        accelx_2, accely_2, accelz_2 = accel_gyro.acceleration
 
-    # Calculate the magnitude of the shake (don't use acceleration directly to avoid gravity readings)
-    if math.sqrt((accelx_1 - accelx_2) ** 2 + (accely_1 - accely_2) ** 2 + (accelz_1 - accelz_2) ** 2) > THRESHOLD:
-        time.sleep(delay_sec)
-        
-        try:
-            picam2.capture_file(filename) # Capture an image after a delay and save it as a JPG.
-        except Exception as e:
-            print("Error capturing image: ", e)
-        print("Photo taken")
-        git_push()
+        # Calculate the magnitude of the shake (don't use acceleration directly to avoid gravity readings)
+        if math.sqrt((accelx_1 - accelx_2) ** 2 + (accely_1 - accely_2) ** 2 + (accelz_1 - accelz_2) ** 2) > THRESHOLD:
+            time.sleep(delay_sec)
+            
+            try:
+                picam2.capture_file(filename) # Capture an image after a delay and save it as a JPG.
+            except Exception as e:
+                print("Error capturing image: ", e)
+            print("Photo taken")
+            git_push()
 
 
 
