@@ -10,12 +10,11 @@ The provided functions are only for reference, you do not need to use them.
 You will need to complete the take_photo() function and configure the VARIABLES section
 """
 
-#AUTHOR: 
-#DATE:
+#AUTHOR: Karan Krishnan
+#DATE: 1/7/2026
 
 #import libraries
 import math
-import os
 import time
 import board
 from adafruit_lsm6ds.lsm6dsox import LSM6DSOX as LSM6DS
@@ -67,47 +66,43 @@ def img_gen(name):
         name (str): your name ex. MasonM
     """
     t = time.strftime("_%H%M%S")
-    imgname_dir = (f'{REPO_PATH}/{FOLDER_PATH}/')
-    imgname_file = (f"{name}{t}.jpg")
-    print(f'Image name: {imgname_dir + imgname_file}')
-    return {"dir": imgname_dir, "file": imgname_file}
+    imgname = (f'{REPO_PATH}/{FOLDER_PATH}/{name}{t}.jpg')
+    return imgname
 
 
-def take_photo(delay_sec: float = 3):
+def take_photo(delay_sec: float = 3, reading_delay_sec: float = 0.4):
     """
     Takes a photo when the FlatSat is shaken above magnitude THRESHOLD.
     
-    :param delay_sec: Description
+    :param delay_sec: Delay in seconds before taking the photo after shake is detected.
     :type delay_sec: float
+    :param reading_delay_sec: Delay in seconds between accelerometer readings.
+    :type reading_delay_sec: float
     """
     name = "KaranK"
     filename = img_gen(name)
 
     #while True:
-    accelx, accely, accelz = accel_gyro.acceleration
+    accelx_1, accely_1, accelz_1 = accel_gyro.acceleration
+    time.sleep(reading_delay_sec) # Small delay to get a second reading
+    accelx_2, accely_2, accelz_2 = accel_gyro.acceleration
 
-    if math.sqrt(accelx ** 2 + accely ** 2 + accelz ** 2) > THRESHOLD: # If the magnitude of the shake is above a given value
+    # Calculate the magnitude of the shake (don't use acceleration directly to avoid gravity readings)
+    if math.sqrt((accelx_1 - accelx_2) ** 2 + (accely_1 - accely_2) ** 2 + (accelz_1 - accelz_2) ** 2) > THRESHOLD:
         time.sleep(delay_sec)
         
-        print("line 89")
-        # if not os.path.exists(filename["dir"]):
-        #     try:
-        #         os.makedirs(filename["dir"]) # Make the images directory if it doesn't exist
-        #     except OSError:
-        #         print("Creation of the directory failed")
-        # os.chdir(img_gen) # Change to the images directory
-        picam2.capture_file(filename["dir"] + filename["file"]) # Capture an image after a delay and save it as a JPG.
-        print("line 96")
-
-        print("Photo taken!")
+        try:
+            picam2.capture_file(filename) # Capture an image after a delay and save it as a JPG.
+        except Exception as e:
+            print("Error capturing image: ", e)
+        print("Photo taken")
         git_push()
-        print("Photo uploaded to GitHub!")
+
 
 
 
 def main():
     take_photo()
-    print(accel_gyro.acceleration)
 
 
 if __name__ == '__main__':
