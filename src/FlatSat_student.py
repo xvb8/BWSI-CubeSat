@@ -70,7 +70,7 @@ def img_gen(name):
     return imgname
 
 
-def take_photo(delay_sec: float = 3, reading_delay_sec: float = 0.4):
+def take_photo(delay_sec: float = 7, reading_delay_sec: float = 0.4):
     """
     Takes a photo when the FlatSat is shaken above magnitude THRESHOLD.
     
