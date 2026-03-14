@@ -82,11 +82,10 @@ def take_photo():
     :type reading_delay_sec: float
     """
     name = "QuarkSat"
-    filename = img_gen(name)
             
     img_arr = None
     try:
-        img_arr = picam2.capture_array(filename)
+        img_arr = picam2.capture_array()
         print("Photo taken")
     except Exception as e:
         print("Error capturing image: ", e)
