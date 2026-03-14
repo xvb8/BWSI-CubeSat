@@ -193,7 +193,7 @@ def main():
         accelx_2, accely_2, accelz_2 = accel_gyro.acceleration
 
         # Calculate the magnitude of the shake (don't use acceleration directly to avoid gravity readings)
-        if math.sqrt((accelx_1 - accelx_2) ** 2 + (accely_1 - accely_2) ** 2 + (accelz_1 - accelz_2) ** 2) > THRESHOLD:
+        if math.sqrt((accelx_1 - accelx_2) ** 2 + (accely_1 - accely_2) ** 2 + (accelz_1 - accelz_2) ** 2) > 4:
             time.sleep(7)
             
             try:
