@@ -126,21 +126,30 @@ def sift_features(img1, img2):
 
 TIME_FOR_AOE_CROSS = 19.7012366996
 
+images1 = []
+images2 = []
+images3 = []
+
 def main():
     flag1 = True
     flag2 = True
     flag3 = True
-    take_photo() # take photo at the start of the program
 
-    if mins() >= 123.86 + (4.08/2 - TIME_FOR_AOE_CROSS) and mins() < 123.86 + (4.1/2 - TIME_FOR_AOE_CROSS) and flag1:
-        take_photo()
-        flag1 = False
-        if mins() >= 4.08/2 and mins() < 4.1/2 and flag2:
+    while True:
+        if mins > TIME_FOR_AOE_CROSS/2 + 4.5 and mins() < TIME_FOR_AOE_CROSS/2 + 4.5 + 0.3:
+                flag1 = True
+                flag2 = True
+                flag3 = True
+        if mins() >= 123.86 + (4.08/2 - TIME_FOR_AOE_CROSS) and mins() < 123.86 + (4.1/2 - TIME_FOR_AOE_CROSS) and flag1:
             take_photo()
-            flag2 = False
-            if mins() >= TIME_FOR_AOE_CROSS/2 + 4.08 and mins() < TIME_FOR_AOE_CROSS/2 + 4.1 and flag3:
+            flag1 = False
+        if mins() >= 4.08/2 and mins() < 4.1/2 and flag2:
                 take_photo()
-                flag3 = False
+                flag2 = False
+                if mins() >= TIME_FOR_AOE_CROSS/2 + 4.08 and mins() < TIME_FOR_AOE_CROSS/2 + 4.1 and flag3:
+                    take_photo()
+                    flag3 = False
+
 def compare_images(img1, img2):
     difference = img1 - img2
     if np.all(difference==0):
