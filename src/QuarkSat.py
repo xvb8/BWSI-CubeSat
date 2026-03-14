@@ -84,6 +84,7 @@ def take_photo():
     name = "QuarkSat"
     filename = img_gen(name)
             
+    img_arr = None
     try:
         img_arr = picam2.capture_array(filename)
         print("Photo taken")
