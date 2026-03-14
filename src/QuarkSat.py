@@ -99,9 +99,13 @@ def compress_file(input_file):
     with zipfile.ZipFile('QuarkSat_compressed_file.zip', 'w', compression=zipfile.ZIP_DEFLATED) as zf:
         zf.write(input_file, arcname='data.txt')
 
+def convert_to_grayscale(image):
+    grey = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    return grey
+
 def sift_features(img1, img2):
-    gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY) # Convert the images to grayscale for SIFT
-    gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+    gray1 =  convert_to_grayscale(img1) # Convert the images to grayscale for SIFT
+    gray2 = convert_to_grayscale(img2)
     sift = cv2.SIFT_create()
     kp1, des1 = sift.detectAndCompute(gray1, None) # Keypoint detection and descriptor computation
     kp2, des2 = sift.detectAndCompute(gray2, None)
@@ -110,9 +114,9 @@ def sift_features(img1, img2):
     flann = cv2.FlannBasedMatcher(flann_params, search_params)
     matches = flann.knnMatch(des1, des2, k=2)
 
-    # Extract the matched keypoints and their corresponding descriptors (reshape for homography)
-    src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)  # 1st image keypoints
-    dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)  # 2nd image keypoints
+    # Extract the matched keypoints and their corresponding descriptors
+    src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches])  # 1st image keypoints
+    dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]) # 2nd image keypoints
 
     # Compare "distance"/difference between the best and second-best matches to filter out good matches
     good_matches = []
@@ -121,7 +125,7 @@ def sift_features(img1, img2):
             good_matches.append(m)
 def main():
     take_photo()
-
+#.reshape(-1, 1, 2)  
 
 if __name__ == '__main__':
     main()
