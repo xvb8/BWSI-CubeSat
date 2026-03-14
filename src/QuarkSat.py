@@ -130,6 +130,7 @@ def main():
     flag1 = True
     flag2 = True
     flag3 = True
+    take_photo() # take photo at the start of the program
 
     if mins() >= 123.86 + (4.08/2 - TIME_FOR_AOE_CROSS) and mins() < 123.86 + (4.1/2 - TIME_FOR_AOE_CROSS) and flag1:
         take_photo()
@@ -151,7 +152,7 @@ def compare_images(img1, img2):
         print(f"Number of new meteors detected: {number_of_meteors}")
 
 
-start_time = time.time()
+
 
 # Define constants for state calculation
 STATE_PERIOD_MINUTES = 123.86  # Duration of one cycle in minutes
@@ -161,7 +162,8 @@ ACTIVE_WINDOW_MINUTES = 4.08738  # Duration of active window in minutes
 def state():
     return "active" if (time.time() - start_time)/60 % STATE_PERIOD_MINUTES < ACTIVE_WINDOW_MINUTES else "inactive"
 def mins():
-    return ((time.time() - start_time)/60 % STATE_PERIOD_MINUTES)*10 # ten times speed for testing purposes
+    return ((time.time() - start_time)/60 % STATE_PERIOD_MINUTES)*100 # ten times speed for testing purposes
 
 if __name__ == '__main__':
+    start_time = time.time()
     main()
