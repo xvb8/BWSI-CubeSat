@@ -123,8 +123,23 @@ def sift_features(img1, img2):
     for m, n in matches:
         if m.distance < 0.7 * n.distance:
             good_matches.append(m)
+
+TIME_FOR_AOE_CROSS = 19.7012366996
+
 def main():
-    take_photo()
+    flag1 = True
+    flag2 = True
+    flag3 = True
+
+    if mins() >= 123.86 + (4.08/2 - TIME_FOR_AOE_CROSS) and mins() < 123.86 + (4.1/2 - TIME_FOR_AOE_CROSS) and flag1:
+        take_photo()
+        flag1 = False
+        if mins() >= 4.08/2 and mins() < 4.1/2 and flag2:
+            take_photo()
+            flag2 = False
+            if mins() >= TIME_FOR_AOE_CROSS/2 + 4.08 and mins() < TIME_FOR_AOE_CROSS/2 + 4.1 and flag3:
+                take_photo()
+                flag3 = False
 def compare_images(img1, img2):
  difference=img1-img2
  if np.all(difference==0):
@@ -134,6 +149,19 @@ def compare_images(img1, img2):
     differences_not_zero= difference[difference!=0]**0 
     number_of_meteors=np.sum(differences_not_zero)
     print (f"Number of new meteors detected: {number_of_meteors}")
+
+
+start_time = time.time()
+
+# Define constants for state calculation
+STATE_PERIOD_MINUTES = 123.86  # Duration of one cycle in minutes
+ACTIVE_WINDOW_MINUTES = 4.08738  # Duration of active window in minutes
+
+# Calculate state based on elapsed time and defined periods
+def state():
+    return "active" if (time.time() - start_time)/60 % STATE_PERIOD_MINUTES < ACTIVE_WINDOW_MINUTES else "inactive"
+def mins():
+    return (time.time() - start_time)/60 % STATE_PERIOD_MINUTES
 
 if __name__ == '__main__':
     main()
