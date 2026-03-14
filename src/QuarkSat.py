@@ -103,6 +103,25 @@ def convert_to_grayscale(image):
     grey = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return grey
 
+def compute_homography(src_pts, dst_pts, reproj_threshold=5.0):
+    if len(src_pts) < 4:  # Homography requires at least 4 point correspondences
+        raise ValueError(f"Not enough matches to compute homography: {len(src_pts)} found, 4 required")
+
+    # Reshape to the format OpenCV expects: (N, 1, 2)
+    src_pts = src_pts.reshape(-1, 1, 2)
+    dst_pts = dst_pts.reshape(-1, 1, 2)
+
+    # RANSAC filters out outlier matches while estimating the homography matrix
+    H, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, reproj_threshold)
+
+    if H is None:
+        raise ValueError("Homography could not be computed — insufficient or degenerate matches")
+
+    inliers = mask.ravel().tolist()
+    inlier_count = sum(inliers)
+
+    return H, mask, inlier_count
+
 def sift_features(img1, img2):
     gray1 =  convert_to_grayscale(img1) # Convert the images to grayscale for SIFT
     gray2 = convert_to_grayscale(img2)
@@ -114,15 +133,28 @@ def sift_features(img1, img2):
     flann = cv2.FlannBasedMatcher(flann_params, search_params)
     matches = flann.knnMatch(des1, des2, k=2)
 
-    # Extract the matched keypoints and their corresponding descriptors
-    src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches])  # 1st image keypoints
-    dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]) # 2nd image keypoints
-
     # Compare "distance"/difference between the best and second-best matches to filter out good matches
+
     good_matches = []
     for m, n in matches:
         if m.distance < 0.7 * n.distance:
             good_matches.append(m)
+
+    # Extract the matched keypoints and their corresponding descriptors
+    src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches])  # 1st image keypoints
+    dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]) # 2nd image keypoints
+
+    good_matches, src_pts, dst_pts = sift_features(img1, img2)
+    H, mask, inlier_count = compute_homography(src_pts, dst_pts)
+
+    print(f"Homography matrix:\n{H}")
+    print(f"Inliers: {inlier_count} / {len(good_matches)}")
+
+    # Optional: warp img1 into the perspective of img2
+    h, w = img2.shape[:2]
+    warped_img1 = cv2.warpPerspective(img1, H, (w, h))
+    return warped_img1
+    
 
 TIME_FOR_AOE_CROSS = 19.7012366996
 
@@ -131,24 +163,45 @@ images2 = []
 images3 = []
 
 def main():
-    flag1 = True
-    flag2 = True
-    flag3 = True
+    # flag1 = True
+    # flag2 = True
+    # flag3 = True
 
+    # while True:
+    #     if mins > TIME_FOR_AOE_CROSS/2 + 4.5 and mins() < TIME_FOR_AOE_CROSS/2 + 4.5 + 0.3:
+    #             flag1 = True
+    #             flag2 = True
+    #             flag3 = True
+    #     if mins() >= 123.86 + (4.08/2 - TIME_FOR_AOE_CROSS) and mins() < 123.86 + (4.1/2 - TIME_FOR_AOE_CROSS) and flag1:
+    #         take_photo()
+    #         flag1 = False
+    #     if mins() >= 4.08/2 and mins() < 4.1/2 and flag2:
+    #             take_photo()
+    #             flag2 = False
+    #             if mins() >= TIME_FOR_AOE_CROSS/2 + 4.08 and mins() < TIME_FOR_AOE_CROSS/2 + 4.1 and flag3:
+    #                 take_photo()
+    #                 flag3 = False
+    images = []
     while True:
-        if mins > TIME_FOR_AOE_CROSS/2 + 4.5 and mins() < TIME_FOR_AOE_CROSS/2 + 4.5 + 0.3:
-                flag1 = True
-                flag2 = True
-                flag3 = True
-        if mins() >= 123.86 + (4.08/2 - TIME_FOR_AOE_CROSS) and mins() < 123.86 + (4.1/2 - TIME_FOR_AOE_CROSS) and flag1:
-            take_photo()
-            flag1 = False
-        if mins() >= 4.08/2 and mins() < 4.1/2 and flag2:
-                take_photo()
-                flag2 = False
-                if mins() >= TIME_FOR_AOE_CROSS/2 + 4.08 and mins() < TIME_FOR_AOE_CROSS/2 + 4.1 and flag3:
-                    take_photo()
-                    flag3 = False
+        if len(images) == 2: # Keep only the last two images for comparison
+            compare_images(images[0], images[1])
+            #save both images as png
+            cv2.imwrite('image1.png', images[0])
+            cv2.imwrite('image2.png', images[0])
+        accelx_1, accely_1, accelz_1 = accel_gyro.acceleration
+        time.sleep(7) # Small delay to get a second reading
+        accelx_2, accely_2, accelz_2 = accel_gyro.acceleration
+
+        # Calculate the magnitude of the shake (don't use acceleration directly to avoid gravity readings)
+        if math.sqrt((accelx_1 - accelx_2) ** 2 + (accely_1 - accely_2) ** 2 + (accelz_1 - accelz_2) ** 2) > THRESHOLD:
+            time.sleep(7)
+            
+            try:
+                images.append(picam2.capture_array()) # Capture an image after a delay and save it as a JPG.
+            except Exception as e:
+                print("Error capturing image: ", e)
+            print("Photo taken")
+            git_push()
 
 def compare_images(img1, img2):
     difference = img1 - img2
