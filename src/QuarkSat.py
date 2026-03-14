@@ -141,14 +141,14 @@ def main():
                 take_photo()
                 flag3 = False
 def compare_images(img1, img2):
- difference=img1-img2
- if np.all(difference==0):
-    print("no new meteors detected")
- elif (difference !=0).any():
-    print ("new meteors detected")
-    differences_not_zero= difference[difference!=0]**0 
-    number_of_meteors=np.sum(differences_not_zero)
-    print (f"Number of new meteors detected: {number_of_meteors}")
+    difference = img1 - img2
+    if np.all(difference==0):
+        print("no new meteors detected")
+    elif (difference !=0).any():
+        print ("new meteors detected")
+        differences_not_zero= difference[difference!=0]**0 
+        number_of_meteors=np.sum(differences_not_zero)
+        print(f"Number of new meteors detected: {number_of_meteors}")
 
 
 start_time = time.time()
@@ -161,7 +161,7 @@ ACTIVE_WINDOW_MINUTES = 4.08738  # Duration of active window in minutes
 def state():
     return "active" if (time.time() - start_time)/60 % STATE_PERIOD_MINUTES < ACTIVE_WINDOW_MINUTES else "inactive"
 def mins():
-    return (time.time() - start_time)/60 % STATE_PERIOD_MINUTES
+    return ((time.time() - start_time)/60 % STATE_PERIOD_MINUTES)*10 # ten times speed for testing purposes
 
 if __name__ == '__main__':
     main()
