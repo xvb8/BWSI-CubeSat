@@ -21,6 +21,8 @@ from adafruit_lsm6ds.lsm6dsox import LSM6DSOX as LSM6DS
 from adafruit_lis3mdl import LIS3MDL
 from git import Repo
 from picamera2 import Picamera2
+import numpy as np
+import cv2
 
 #VARIABLES
 THRESHOLD = 3      #Any desired value from the accelerometer
@@ -68,7 +70,7 @@ def img_gen(name):
     t = time.strftime("_%H%M%S")
     imgname = (f'{REPO_PATH}/{FOLDER_PATH}/{name}{t}.jpg')
     return imgname
-
+images = [] # list to store captured images for comparison
 
 def take_photo(delay_sec: float = 7, reading_delay_sec: float = 0.4):
     """
@@ -83,6 +85,8 @@ def take_photo(delay_sec: float = 7, reading_delay_sec: float = 0.4):
     filename = img_gen(name)
 
     while True:
+        if len(images) == 2: # Keep only the last two images for comparison
+            compare_images(images[0], images[1])
         accelx_1, accely_1, accelz_1 = accel_gyro.acceleration
         time.sleep(reading_delay_sec) # Small delay to get a second reading
         accelx_2, accely_2, accelz_2 = accel_gyro.acceleration
@@ -92,7 +96,7 @@ def take_photo(delay_sec: float = 7, reading_delay_sec: float = 0.4):
             time.sleep(delay_sec)
             
             try:
-                picam2.capture_file(filename) # Capture an image after a delay and save it as a JPG.
+                images.append(picam2.capture_array()) # Capture an image after a delay and save it as a JPG.
             except Exception as e:
                 print("Error capturing image: ", e)
             print("Photo taken")
