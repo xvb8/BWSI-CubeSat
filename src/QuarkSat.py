@@ -125,7 +125,15 @@ def sift_features(img1, img2):
             good_matches.append(m)
 def main():
     take_photo()
-#.reshape(-1, 1, 2)  
+def compare_images(img1, img2):
+ difference=img1-img2
+ if np.all(difference==0):
+    print("no new meteors detected")
+ elif (difference !=0).any():
+    print ("new meteors detected")
+    differences_not_zero= difference[difference!=0]**0 
+    number_of_meteors=np.sum(differences_not_zero)
+    print (f"Number of new meteors detected: {number_of_meteors}")
 
 if __name__ == '__main__':
     main()
