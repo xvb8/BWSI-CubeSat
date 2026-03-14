@@ -184,10 +184,12 @@ def main():
     images = []
     while True:
         if len(images) == 2: # Keep only the last two images for comparison
-            compare_images(images[0], images[1])
+            image_edited = sift_features(images[0], images[1])
+            compare_images(image_edited, images[1])
             #save both images as png
             cv2.imwrite('image1.png', images[0])
-            cv2.imwrite('image2.png', images[0])
+            cv2.imwrite('image2.png', images[1])
+            cv2.imwrite('warped_image1.png', image_edited)
         accelx_1, accely_1, accelz_1 = accel_gyro.acceleration
         time.sleep(7) # Small delay to get a second reading
         accelx_2, accely_2, accelz_2 = accel_gyro.acceleration
