@@ -165,7 +165,7 @@ def compare_images(img1, img2, intersection_mask):
 
     # intersection_mask = cv2.bitwise_and(mask_img1, mask_img2)
 
-    cv2.imwrite('src/int_mask.png', intersection_mask)
+    # cv2.imwrite('src/int_mask.png', intersection_mask)
     # cv2.imwrite('src/1mask.png', mask_img1)
     # cv2.imwrite('src/2mask.png', mask_img2)
 
