@@ -89,8 +89,6 @@ def compare_images(img1, img2, homography):
     # Zero out the difference in black/invalid regions
     difference[intersection_mask == 0] = 0
 
-    
-
     if np.all(difference==0):
         print("no new pixels detected")
     elif (difference !=0).any():
@@ -98,6 +96,21 @@ def compare_images(img1, img2, homography):
         differences_not_zero= difference[difference!=0]**0 
         number_of_pixels=np.sum(differences_not_zero)
         print(f"Number of new pixels detected: {number_of_pixels}")
+
+    # Build a visualisation: show intersection with differences highlighted red
+    vis = img2.copy()  # start with img2 as the base
+
+    # Grey out everything outside the intersection
+    vis[intersection_mask == 0] = [50, 50, 50]
+
+    # Find pixels that are different within the intersection
+    diff_mask = np.any(difference != 0, axis=2)  # (H, W) bool — True where any channel differs
+
+    # Paint those pixels red
+    vis[diff_mask] = [0, 0, 255]  # BGR — red in OpenCV
+
+    cv2.imwrite('src/diff_visualisation.png', vis)
+    print("Visualisation saved to src/diff_visualisation.png")
 
 # with open('image1.arr' , 'rb') as f:
 #     img1 = np.load(f)
