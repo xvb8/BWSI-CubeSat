@@ -87,7 +87,7 @@ def take_photo(save_file = True):
     try:
         img_arr = picam2.capture_array()
         if save_file:
-            filename = "img_gen(name)"
+            filename = img_gen(name)
             with open(f'{filename}.arr', 'wb') as f:
                 np.save(f, img_arr)
         print("Photo taken")
@@ -135,8 +135,8 @@ def main():
     images = []
     while True:
         if len(images) == 2: # Keep only the last two images for comparison
-            cv2.imwrite(f'/home/pi/BWSI-CubeSat/images/image1{img_gen("QuarkSat")}.png', images[0])
-            cv2.imwrite(f'/home/pi/BWSI-CubeSat/images/image2{img_gen("QuarkSat")}.png', images[1])
+            cv2.imwrite(f'{img_gen("QuarkSat1")}', images[0])
+            cv2.imwrite(f'{img_gen("QuarkSat2")}', images[1])
             git_push()
             while True:
                 pass
@@ -153,7 +153,6 @@ def main():
             except Exception as e:
                 print("Error capturing image: ", e)
             print("Photo taken")
-            git_push()
 
 
 
