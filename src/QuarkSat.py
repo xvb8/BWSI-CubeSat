@@ -26,12 +26,12 @@ from git import Repo
 from picamera2 import Picamera2
 from bluetooth.pi_sender import send_file
 import socket
-from bluetooth.config import LAPTOP_MAC, BLUETOOTH_PORT, IMAGE_PATH, SOCKET_BUFFER_SIZE
 
-# 1. Create the socket
-sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
-sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, SOCKET_BUFFER_SIZE)
+with open("bluetooth/laptop_ip.txt", "r") as f:
+    LAPTOP_IP = f.read().strip()  # your actual laptop IP
+TCP_PORT = 65432
 
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 
 #VARIABLES    #Any desired value from the accelerometer
@@ -142,7 +142,7 @@ def main():
     #                 take_photo()
     #                 flag3 = False
     # 2. Connect to the laptop
-    sock.connect((LAPTOP_MAC, BLUETOOTH_PORT))
+    sock.connect((LAPTOP_IP, TCP_PORT))
     images = []
     while True:
         if len(images) == 2: # Keep only the last two images for comparison

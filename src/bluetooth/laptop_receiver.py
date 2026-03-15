@@ -222,7 +222,7 @@ def _show_progress(bytes_done, bytes_total):
 
 
 # ================================================================
-#  ENTRY POINT  —  runs when you do:  python laptop_receiver.py
+#  ENTRY POINT  —  runs when you do:  python src/bluetooth/laptop_receiver.py
 # ================================================================
 
     # --- Create the save folder if it doesn't exist yet -------
@@ -230,93 +230,80 @@ def _show_progress(bytes_done, bytes_total):
     #  os.makedirs() creates the folder.
     #  exist_ok=True means "don't complain if it already exists."
     #
-    if __name__ == "__main__":
-        os.makedirs(SAVE_FOLDER, exist_ok=True)
+if __name__ == "__main__":
+    os.makedirs(SAVE_FOLDER, exist_ok=True)
 
 
-        # --- Print a startup summary ------------------------------
-        print("=" * 54)
-        print("  Laptop  |  Bluetooth Image Receiver")
-        print("=" * 54)
-        print(f"  Listening on channel : {BLUETOOTH_PORT}")
-        print(f"  Saving files to      : {SAVE_FOLDER}")
-        print(f"  Chunk size           : {CHUNK_SIZE // 1024} KB")
-        print(f"  Socket buffer        : {SOCKET_BUFFER_SIZE // 1024} KB")
-        print()
+    # --- Print a startup summary ------------------------------
+    print("=" * 54)
+    print("  Laptop  |  Bluetooth Image Receiver")
+    print("=" * 54)
+    print(f"  Listening on channel : {BLUETOOTH_PORT}")
+    print(f"  Saving files to      : {SAVE_FOLDER}")
+    print(f"  Chunk size           : {CHUNK_SIZE // 1024} KB")
+    print(f"  Socket buffer        : {SOCKET_BUFFER_SIZE // 1024} KB")
+    print()
 
 
-        # --- Create the server socket -----------------------------
-        #
-        #  This socket is the "front door" — it waits for the Pi to
-        #  knock, then opens a new connection specifically for that Pi.
-        #
-        server_sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
+    # --- Create the server socket -----------------------------
+    #
+    #  This socket is the "front door" — it waits for the Pi to
+    #  knock, then opens a new connection specifically for that Pi.
+    #
+    server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, SOCKET_BUFFER_SIZE)
+    server_sock.bind(("0.0.0.0", 65432))  # listen on all network interfaces
+    server_sock.listen(1)
 
-        # SO_REUSEADDR lets us restart this script quickly.
-        # Without it, the OS would make us wait ~60 seconds before
-        # the port is free again after stopping the script.
-        server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-        # Make the receive buffer larger so we can absorb big chunks
-        # from the Pi without losing any data.
-        server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, SOCKET_BUFFER_SIZE)
-
-        # bind() claims a specific channel on this machine.
-        # "" means "use whatever Bluetooth adapter is available."
-        server_sock.bind((MAC_ADDRESS, BLUETOOTH_PORT)) 
-
-        # listen(1) means "be ready to accept connections."
-        # The 1 means: keep at most 1 connection waiting in the queue.
-        server_sock.listen(1)
-
-        print("[READY] Waiting for the Raspberry Pi to connect ...")
-        print("        (Now run pi_sender.py on the Pi)")
-        print("        Press Ctrl+C at any time to stop.\n")
+    print("[READY] Waiting for the Raspberry Pi to connect ...")
+    print("        (Now run pi_sender.py on the Pi)")
+    print("        Press Ctrl+C at any time to stop.\n")
 
 
-        # --- Main loop: keep accepting connections ----------------
-        #
-        #  This loop runs forever, handling one connection at a time.
-        #  Each time the Pi connects, we receive the photo and then
-        #  go back to waiting for the next one.
-        #
-        try:
-            while True:
+    # --- Main loop: keep accepting connections ----------------
+    #
+    #  This loop runs forever, handling one connection at a time.
+    #  Each time the Pi connects, we receive the photo and then
+    #  go back to waiting for the next one.
+    #
+    try:
+        while True:
 
-                # .accept() PAUSES HERE and waits.
-                # When the Pi connects, it returns:
-                #   client_sock — a new socket just for this Pi session
-                #   client_addr — the Pi's Bluetooth MAC address
-                client_sock, client_addr = server_sock.accept()
-                print(f"[INFO] Pi connected from {client_addr}")
+            # .accept() PAUSES HERE and waits.
+            # When the Pi connects, it returns:
+            #   client_sock — a new socket just for this Pi session
+            #   client_addr — the Pi's Bluetooth MAC address
+            client_sock, client_addr = server_sock.accept()
+            print(f"[INFO] Pi connected from {client_addr}")
 
-                # Enlarge the receive buffer on the per-connection socket too.
-                client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, SOCKET_BUFFER_SIZE)
+            # Enlarge the receive buffer on the per-connection socket too.
+            client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, SOCKET_BUFFER_SIZE)
 
-                # Receive the photo and save it.
-                saved_path = receive_file(client_sock)
+            # Receive the photo and save it.
+            saved_path = receive_file(client_sock)
 
-                # Close the connection with this Pi.
-                # This does NOT shut down the server — we loop back
-                # to .accept() and wait for the next connection.
-                client_sock.close()
+            # Close the connection with this Pi.
+            # This does NOT shut down the server — we loop back
+            # to .accept() and wait for the next connection.
+            client_sock.close()
 
-                if saved_path:
-                    print(f"\n✓  Photo saved successfully!\n")
-                else:
-                    print(f"\n✗  Transfer failed — file may be incomplete.\n")
+            if saved_path:
+                print(f"\n✓  Photo saved successfully!\n")
+            else:
+                print(f"\n✗  Transfer failed — file may be incomplete.\n")
 
-                print("[READY] Waiting for next connection ...\n")
+            print("[READY] Waiting for next connection ...\n")
 
 
-        except KeyboardInterrupt:
-            # Ctrl+C was pressed — graceful shutdown.
-            # KeyboardInterrupt is the Python exception for Ctrl+C.
-            print("\n[INFO] Stopped by user (Ctrl+C).")
+    except KeyboardInterrupt:
+        # Ctrl+C was pressed — graceful shutdown.
+        # KeyboardInterrupt is the Python exception for Ctrl+C.
+        print("\n[INFO] Stopped by user (Ctrl+C).")
 
-        finally:
-            # 'finally' always runs no matter what —
-            # even if there was a crash.  This ensures we
-            # always clean up the socket properly.
-            server_sock.close()
-            print("[INFO] Bluetooth server closed.  Goodbye!")
+    finally:
+        # 'finally' always runs no matter what —
+        # even if there was a crash.  This ensures we
+        # always clean up the socket properly.
+        server_sock.close()
+        print("[INFO] Bluetooth server closed.  Goodbye!")
