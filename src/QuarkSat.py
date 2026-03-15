@@ -72,7 +72,7 @@ def img_gen(name):
     return imgname
 
 
-def take_photo():
+def take_photo(save_file = True):
     """
     Takes a photo
     
@@ -86,6 +86,10 @@ def take_photo():
     img_arr = None
     try:
         img_arr = picam2.capture_array()
+        if save_file:
+            filename = img_gen(name)
+            with open(f'{filename}.arr', 'wb') as f:
+                np.save(f, img_arr)
         print("Photo taken")
     except Exception as e:
         print("Error capturing image: ", e)
@@ -102,59 +106,6 @@ def compress_file(input_file):
 def convert_to_grayscale(image):
     grey = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return grey
-
-def compute_homography(src_pts, dst_pts, reproj_threshold=5.0):
-    if len(src_pts) < 4:  # Homography requires at least 4 point correspondences
-        raise ValueError(f"Not enough matches to compute homography: {len(src_pts)} found, 4 required")
-
-    # Reshape to the format OpenCV expects: (N, 1, 2)
-    src_pts = src_pts.reshape(-1, 1, 2)
-    dst_pts = dst_pts.reshape(-1, 1, 2)
-
-    # RANSAC filters out outlier matches while estimating the homography matrix
-    H, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, reproj_threshold)
-
-    if H is None:
-        raise ValueError("Homography could not be computed — insufficient or degenerate matches")
-
-    inliers = mask.ravel().tolist()
-    inlier_count = sum(inliers)
-
-    return H, mask, inlier_count
-
-def sift_features(img1, img2):
-    gray1 =  convert_to_grayscale(img1) # Convert the images to grayscale for SIFT
-    gray2 = convert_to_grayscale(img2)
-    sift = cv2.SIFT_create()
-    kp1, des1 = sift.detectAndCompute(gray1, None) # Keypoint detection and descriptor computation
-    kp2, des2 = sift.detectAndCompute(gray2, None)
-    flann_params = dict(algorithm=1, trees=5) # FLANN settings
-    search_params = dict(checks=50) # Number of checks for FLANN (higher is more accurate but slower)
-    flann = cv2.FlannBasedMatcher(flann_params, search_params)
-    matches = flann.knnMatch(des1, des2, k=2)
-
-    # Compare "distance"/difference between the best and second-best matches to filter out good matches
-
-    good_matches = []
-    for m, n in matches:
-        if m.distance < 0.7 * n.distance:
-            good_matches.append(m)
-
-    # Extract the matched keypoints and their corresponding descriptors
-    src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches])  # 1st image keypoints
-    dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]) # 2nd image keypoints
-
-    good_matches, src_pts, dst_pts = sift_features(img1, img2)
-    H, mask, inlier_count = compute_homography(src_pts, dst_pts)
-
-    print(f"Homography matrix:\n{H}")
-    print(f"Inliers: {inlier_count} / {len(good_matches)}")
-
-    # Optional: warp img1 into the perspective of img2
-    h, w = img2.shape[:2]
-    warped_img1 = cv2.warpPerspective(img1, H, (w, h))
-    return warped_img1
-    
 
 TIME_FOR_AOE_CROSS = 19.7012366996
 
@@ -184,13 +135,8 @@ def main():
     images = []
     while True:
         if len(images) == 2: # Keep only the last two images for comparison
-            print("Comparing images...")
-            image_edited = sift_features(images[0], images[1])
-            compare_images(image_edited, images[1])
-            #save both images as png
             cv2.imwrite('image1.png', images[0])
             cv2.imwrite('image2.png', images[1])
-            cv2.imwrite('warped_image1.png', image_edited)
             while True:
                 pass
         accelx_1, accely_1, accelz_1 = accel_gyro.acceleration
@@ -207,16 +153,6 @@ def main():
                 print("Error capturing image: ", e)
             print("Photo taken")
             git_push()
-
-def compare_images(img1, img2):
-    difference = img1 - img2
-    if np.all(difference==0):
-        print("no new meteors detected")
-    elif (difference !=0).any():
-        print ("new meteors detected")
-        differences_not_zero= difference[difference!=0]**0 
-        number_of_meteors=np.sum(differences_not_zero)
-        print(f"Number of new meteors detected: {number_of_meteors}")
 
 
 
