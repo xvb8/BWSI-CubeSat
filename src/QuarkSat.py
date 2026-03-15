@@ -24,6 +24,15 @@ from adafruit_lsm6ds.lsm6dsox import LSM6DSOX as LSM6DS
 from adafruit_lis3mdl import LIS3MDL
 from git import Repo
 from picamera2 import Picamera2
+from bluetooth.pi_sender import send_file
+import socket
+from bluetooth.config import LAPTOP_MAC, BLUETOOTH_PORT, IMAGE_PATH, SOCKET_BUFFER_SIZE
+
+# 1. Create the socket
+sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, SOCKET_BUFFER_SIZE)
+
+
 
 #VARIABLES    #Any desired value from the accelerometer
 REPO_PATH = "/home/pi/BWSI-CubeSat"     #Your github repo path: ex. /home/pi/FlatSatChallenge
@@ -132,11 +141,20 @@ def main():
     #     if mins() >= TIME_FOR_AOE_CROSS/2 + 4.08 and mins() < TIME_FOR_AOE_CROSS/2 + 4.1 and flag3:
     #                 take_photo()
     #                 flag3 = False
+    # 2. Connect to the laptop
+    sock.connect((LAPTOP_MAC, BLUETOOTH_PORT))
     images = []
     while True:
         if len(images) == 2: # Keep only the last two images for comparison
-            cv2.imwrite(f'{img_gen("QuarkSat1")}', images[0])
-            cv2.imwrite(f'{img_gen("QuarkSat2")}', images[1])
+            path1 = img_gen("QuarkSat1")
+            path2 = img_gen("QuarkSat2")
+            
+            cv2.imwrite(path1, images[0])
+            cv2.imwrite(path2, images[1])
+            
+            send_file(sock, path1)
+            send_file(sock, path2)
+            sock.close()
             git_push()
             while True:
                 pass

@@ -242,8 +242,8 @@ def compare_images(img1, img2, intersection_mask, inlier_pts):
 THRESHOLD = 30 # Color point value
 KP_EXCLUDE_RADIUS = 0 # Pixels
 
-img1 = cv2.imread('src/image1.png')
-img2 = cv2.imread('src/image2.png')
+img1 = cv2.imread('src/image1.jpg')
+img2 = cv2.imread('src/image2.jpg')
 
 warped_img1, homography, _, dst_points = sift_features(img1, img2)
 intersection_mask = get_warp_polygon(img1, homography, img2.shape)
