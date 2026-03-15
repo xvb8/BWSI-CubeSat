@@ -10,7 +10,7 @@ The provided functions are only for reference, you do not need to use them.
 You will need to complete the take_photo() function and configure the VARIABLES section
 """
 
-#AUTHOR: Karan Krishnan
+#AUTHOR: CH4 Team
 #DATE: 1/7/2026
 
 #import libraries
@@ -87,7 +87,7 @@ def take_photo(save_file = True):
     try:
         img_arr = picam2.capture_array()
         if save_file:
-            filename = img_gen(name)
+            filename = "img_gen(name)"
             with open(f'{filename}.arr', 'wb') as f:
                 np.save(f, img_arr)
         print("Photo taken")
@@ -129,14 +129,15 @@ def main():
     #     if mins() >= 4.08/2 and mins() < 4.1/2 and flag2:
     #             take_photo()
     #             flag2 = False
-    #             if mins() >= TIME_FOR_AOE_CROSS/2 + 4.08 and mins() < TIME_FOR_AOE_CROSS/2 + 4.1 and flag3:
+    #     if mins() >= TIME_FOR_AOE_CROSS/2 + 4.08 and mins() < TIME_FOR_AOE_CROSS/2 + 4.1 and flag3:
     #                 take_photo()
     #                 flag3 = False
     images = []
     while True:
         if len(images) == 2: # Keep only the last two images for comparison
-            cv2.imwrite('image1.png', images[0])
-            cv2.imwrite('image2.png', images[1])
+            cv2.imwrite(f'/home/pi/BWSI-CubeSat/images/image1{img_gen("QuarkSat")}.png', images[0])
+            cv2.imwrite(f'/home/pi/BWSI-CubeSat/images/image2{img_gen("QuarkSat")}.png', images[1])
+            git_push()
             while True:
                 pass
         accelx_1, accely_1, accelz_1 = accel_gyro.acceleration
