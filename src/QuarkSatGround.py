@@ -12,7 +12,7 @@ def refine_alignment(warped_img1, img2, mask, num_levels=3):
     # Start from identity; warped_img1 is already roughly aligned
     H_refined = np.eye(3, 3, dtype=np.float32)
 
-    criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 500, 1e-5)
+    criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 1000, 1e-7)
 
     gray1_pyr = [gray1]
     gray2_pyr = [gray2]
@@ -20,7 +20,10 @@ def refine_alignment(warped_img1, img2, mask, num_levels=3):
     for _ in range(num_levels - 1):
         gray1_pyr.insert(0, cv2.pyrDown(gray1_pyr[0]))
         gray2_pyr.insert(0, cv2.pyrDown(gray2_pyr[0]))
-        mask_pyr.insert(0, cv2.pyrDown(mask_pyr[0]))
+        m = cv2.pyrDown(mask_pyr[0])
+        m = (m > 127).astype(np.uint8) * 255  # keep mask binary
+        mask_pyr.insert(0, m)
+
      # Refine from coarsest to finest level
     for level, (g1, g2, m) in enumerate(zip(gray1_pyr, gray2_pyr, mask_pyr)):
 
@@ -30,23 +33,26 @@ def refine_alignment(warped_img1, img2, mask, num_levels=3):
         H_scaled[0, 2] /= scale
         H_scaled[1, 2] /= scale
         try:
-            _, H_refined = cv2.findTransformECC(
+            _, H = cv2.findTransformECC(
                 g2, g1,
                 H_scaled,
                 cv2.MOTION_HOMOGRAPHY,
                 criteria,
                 m
             )
+
+            H_refined = H.copy()
+            H_refined[0, 2] *= scale
+            H_refined[1, 2] *= scale
+
         except cv2.error:
             print("[WARN] ECC did not converge — using unrefined warp")
             continue
             # Scale H back up for the next level
-        H_refined = H_scaled.copy()
-        H_refined[0, 2] *= scale
-        H_refined[1, 2] *= scale
+
 
     h, w = img2.shape[:2]
-    refined_warp = cv2.warpPerspective(warped_img1, H_refined, (w, h))
+    refined_warp = cv2.warpPerspective(warped_img1, H_refined, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
     return refined_warp, H_refined
 
 def compute_homography(src_pts, dst_pts, reproj_threshold=2.0):
@@ -107,7 +113,11 @@ def sift_features(img1, img2):
 
 
     print("Computing homography with RANSAC...")
-    H, mask, inlier_count = compute_homography(src_pts, dst_pts)
+    H, ransac_mask, inlier_count = compute_homography(src_pts, dst_pts)
+
+    inlier_mask = ransac_mask.ravel().astype(bool)
+    inlier_src = src_pts[inlier_mask]  # keypoint locations in img1
+    inlier_dst = dst_pts[inlier_mask]  # corresponding locations in img2
 
     print(f"Homography matrix:\n{H}")
     print(f"Inliers: {inlier_count} / {len(good_matches)}")
@@ -115,8 +125,8 @@ def sift_features(img1, img2):
     # Warp img1 into the perspective of img2
     print("Warping image 1 to align with image 2...")
     h, w = img2.shape[:2]
-    warped_img1 = cv2.warpPerspective(img1, H, (w, h))
-    return (warped_img1, H)
+    warped_img1 = cv2.warpPerspective(img1, H, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+    return (warped_img1, H, inlier_src, inlier_dst)
 
 from shapely.geometry import Polygon
 
@@ -149,7 +159,7 @@ def get_warp_polygon(img1, H, img2_shape):
 
     return polygon_mask
 
-def compare_images(img1, img2, intersection_mask):
+def compare_images(img1, img2, intersection_mask, inlier_pts):
 
     # # Create a mask of ones (valid pixels) and warp it the same way H warps img1
     # h, w = img2.shape[:2]
@@ -157,7 +167,7 @@ def compare_images(img1, img2, intersection_mask):
     # cv2.imwrite('src/canv.png', canvas)
     # mask_img1 = cv2.warpPerspective(
     # canvas, homography, (w, h),
-    # flags=cv2.INTER_NEAREST  # hard edge, no interpolation bleed
+    # flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT  # hard edge, no interpolation bleed
     # )
 
     # mask_img2 = np.ones((h, w), dtype=np.uint8) * 255  # 255 everywhere (all valid)
@@ -169,13 +179,25 @@ def compare_images(img1, img2, intersection_mask):
     # cv2.imwrite('src/1mask.png', mask_img1)
     # cv2.imwrite('src/2mask.png', mask_img2)
 
+    # Do keypoint exclusion: create a mask that excludes a small radius around each inlier keypoint, to avoid false positives from small misalignments around those points
+    kp_exclusion = np.ones(img2.shape[:2], dtype=np.uint8) * 255
+    for pt in inlier_pts:
+        x, y = int(pt[0]), int(pt[1])
+        cv2.circle(kp_exclusion, (x, y), radius=KP_EXCLUDE_RADIUS, color=0, thickness=-1)
+
     difference = cv2.absdiff(img1, img2)
 
     # Zero out the difference in black/invalid regions
     difference[intersection_mask == 0] = 0
-
     difference[difference <= THRESHOLD] = 0
+    diff_mask_df = np.any(difference != 0, axis=2)
+    difference[kp_exclusion == 0] = 0
     diff_mask = np.any(difference != 0, axis=2)
+
+    diff_mask = np.any(difference != 0, axis=2)
+    # diff_gray = cv2.cvtColor(difference, cv2.COLOR_BGR2GRAY)
+    # diff_mask = diff_gray > THRESHOLD
+
 
     # diff_gray = cv2.cvtColor(difference, cv2.COLOR_BGR2GRAY)
     # adaptive = cv2.adaptiveThreshold(diff_gray, 255,
@@ -189,8 +211,7 @@ def compare_images(img1, img2, intersection_mask):
         print("no new pixels detected")
     else:
         print ("new pixels detected")
-        differences_not_zero = difference[difference!=0]**0 
-        number_of_pixels=np.sum(differences_not_zero)
+        number_of_pixels = np.count_nonzero(diff_mask)
         print(f"Number of new pixels detected: {number_of_pixels}")
 
     # Build a visualisation: show intersection with differences highlighted red
@@ -199,11 +220,16 @@ def compare_images(img1, img2, intersection_mask):
     # Grey out everything outside the intersection
     vis[intersection_mask == 0] = [50, 50, 50]
 
-    # Find pixels that are different within the intersection
-    diff_mask = np.any(difference != 0, axis=2)  # (H, W) bool — True where any channel differs
-
     # Paint those pixels red
     vis[diff_mask] = [0, 0, 255]  # BGR — red in OpenCV
+
+    # Paint inlier keypoints green
+    for pt in inlier_pts:
+        x, y = int(pt[0]), int(pt[1])
+        if diff_mask_df[y, x]:  # If this keypoint is in a different pixel, paint it yellow instead of green
+            cv2.circle(vis, (x, y), radius=KP_EXCLUDE_RADIUS, color=(0, 255, 255), thickness=-1)  # yellow
+        else:
+            cv2.circle(vis, (x, y), radius=KP_EXCLUDE_RADIUS, color=(0, 255, 0), thickness=-1)
 
     cv2.imwrite('src/diff_visualisation.png', vis)
     print("Visualisation saved to src/diff_visualisation.png")
@@ -213,20 +239,23 @@ def compare_images(img1, img2, intersection_mask):
 # with open('image2.arr' , 'rb') as f:
 #     img2 = np.load(f)
 
-THRESHOLD = 30
+THRESHOLD = 30 # Color point value
+KP_EXCLUDE_RADIUS = 0 # Pixels
 
 img1 = cv2.imread('src/image1.png')
 img2 = cv2.imread('src/image2.png')
 
-warped_img1, homography = sift_features(img1, img2)
+warped_img1, homography, _, dst_points = sift_features(img1, img2)
 intersection_mask = get_warp_polygon(img1, homography, img2.shape)
-warped_img1, homography_refined = refine_alignment(warped_img1, img2, intersection_mask)
+_, homography_refined = refine_alignment(warped_img1, img2, intersection_mask)
 H_total = homography_refined @ homography
+h, w = img2.shape[:2]
+warped_img1 = cv2.warpPerspective(img1, H_total, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
 polygon_mask = get_warp_polygon(img1, H_total, img2.shape)  # recompute with refined H
 cv2.imwrite('src/warped_image1.png', warped_img1)
 
 
 print("Comparing images...")
-compare_images(warped_img1, img2, polygon_mask)
+compare_images(warped_img1, img2, polygon_mask, dst_points)
 
 
