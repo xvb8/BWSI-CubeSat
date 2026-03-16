@@ -26,7 +26,7 @@ import os
 import struct
 import time
 
-from config import (
+from bluetooth.config import (
     LAPTOP_MAC,
     BLUETOOTH_PORT,
     IMAGE_PATH,
@@ -40,10 +40,6 @@ from config import (
 # error message rather than a confusing Python crash.
 
 import socket
-
-with open("laptop_ip.txt", "r") as f:
-    LAPTOP_IP = f.read().strip()   # <-- Paste your laptop's IP address here
-TCP_PORT = 65432
 
 # ================================================================
 #  MAIN FUNCTION: send_file()

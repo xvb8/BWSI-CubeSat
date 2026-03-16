@@ -26,17 +26,14 @@ from git import Repo
 from picamera2 import Picamera2
 from bluetooth.pi_sender import send_file
 import socket
-
-with open("bluetooth/laptop_ip.txt", "r") as f:
-    LAPTOP_IP = f.read().strip()  # your actual laptop IP
-TCP_PORT = 65432
-
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+from bluetooth.config import LAPTOP_MAC, BLUETOOTH_PORT
+import os
 
 
 #VARIABLES    #Any desired value from the accelerometer
 REPO_PATH = "/home/pi/BWSI-CubeSat"     #Your github repo path: ex. /home/pi/FlatSatChallenge
-FOLDER_PATH = "/images"   #Your image folder path in your GitHub repo: ex. /Images
+FOLDER_PATH = "images"   #Your image folder path in your GitHub repo: ex. /Images
+SHAKE_THRESHOLD = 4
 
 #imu and camera initialization
 i2c = board.I2C()
@@ -59,7 +56,7 @@ def git_push():
         print('added remote')
         origin.pull()
         print('pulled changes')
-        repo.git.add(REPO_PATH + FOLDER_PATH)
+        repo.git.add(os.path.join(REPO_PATH, FOLDER_PATH))
         repo.index.commit('New Photo')
         print('made the commit')
         origin.push()
@@ -97,7 +94,7 @@ def take_photo(save_file = True):
         img_arr = picam2.capture_array()
         if save_file:
             filename = img_gen(name)
-            with open(f'{filename}.arr', 'wb') as f:
+            with open(filename.replace('.jpg', '.arr'), 'wb') as f:
                 np.save(f, img_arr)
         print("Photo taken")
     except Exception as e:
@@ -142,42 +139,58 @@ def main():
     #                 take_photo()
     #                 flag3 = False
     # 2. Connect to the laptop
-    sock.connect((LAPTOP_IP, TCP_PORT))
+    sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
+    print("Connecting to laptop...")
+    sock.connect((LAPTOP_MAC, BLUETOOTH_PORT))
     images = []
-    while True:
-        if len(images) == 2: # Keep only the last two images for comparison
-            path1 = img_gen("QuarkSat1")
-            path2 = img_gen("QuarkSat2")
-            
-            cv2.imwrite(path1, images[0])
-            cv2.imwrite(path2, images[1])
-            
-            send_file(sock, path1)
-            send_file(sock, path2)
+    print("Connected to laptop, starting main loop...")
+    try:
+        while True:
+            if len(images) == 2: # Keep only the last two images for comparison
+                path1 = img_gen("QuarkSat1")
+                path2 = img_gen("QuarkSat2")
+                
+                cv2.imwrite(path1, images[0])
+                cv2.imwrite(path2, images[1])
+                
+                send_file(sock, path1)
+                sock.close()
+                print("Reconnecting to laptop...")
+                sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
+                sock.connect((LAPTOP_MAC, BLUETOOTH_PORT))
+                images = []
+                print("Connected to laptop, sending second image...")
+                send_file(sock, path2)
+                sock.close()
+                git_push()
+                print("Freezing...")
+                while True:
+                    pass
+            accelx_1, accely_1, accelz_1 = accel_gyro.acceleration
+            time.sleep(7) # Small delay to get a second reading
+            accelx_2, accely_2, accelz_2 = accel_gyro.acceleration
+
+            # Calculate the magnitude of the shake (don't use acceleration directly to avoid gravity readings)
+            if math.sqrt((accelx_1 - accelx_2) ** 2 + (accely_1 - accely_2) ** 2 + (accelz_1 - accelz_2) ** 2) > SHAKE_THRESHOLD:
+                time.sleep(7)
+                try:
+                    frame = picam2.capture_array()
+                    images.append(cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)) # Capture an image after a delay and save it as a JPG.
+                except Exception as e:
+                    print("Error capturing image: ", e)
+                print("Photo taken")
+    finally:
+        if sock.fileno() != -1:
+            print("Closing socket connection...")
             sock.close()
-            git_push()
-            while True:
-                pass
-        accelx_1, accely_1, accelz_1 = accel_gyro.acceleration
-        time.sleep(7) # Small delay to get a second reading
-        accelx_2, accely_2, accelz_2 = accel_gyro.acceleration
-
-        # Calculate the magnitude of the shake (don't use acceleration directly to avoid gravity readings)
-        if math.sqrt((accelx_1 - accelx_2) ** 2 + (accely_1 - accely_2) ** 2 + (accelz_1 - accelz_2) ** 2) > 4:
-            time.sleep(7)
-            
-            try:
-                images.append(picam2.capture_array()) # Capture an image after a delay and save it as a JPG.
-            except Exception as e:
-                print("Error capturing image: ", e)
-            print("Photo taken")
 
 
 
 
-# Define constants for state calculation
+# Define constants fo   r state calculation
 STATE_PERIOD_MINUTES = 123.86  # Duration of one cycle in minutes
 ACTIVE_WINDOW_MINUTES = 4.08738  # Duration of active window in minutes
+
 
 # Calculate state based on elapsed time and defined periods
 def state():
@@ -185,6 +198,7 @@ def state():
 def mins():
     return ((time.time() - start_time)/60 % STATE_PERIOD_MINUTES)*100 # ten times speed for testing purposes
 
+start_time = time.time()
+
 if __name__ == '__main__':
-    start_time = time.time()
     main()

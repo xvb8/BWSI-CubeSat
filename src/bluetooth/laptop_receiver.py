@@ -250,10 +250,9 @@ if __name__ == "__main__":
     #  This socket is the "front door" — it waits for the Pi to
     #  knock, then opens a new connection specifically for that Pi.
     #
-    server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
     server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, SOCKET_BUFFER_SIZE)
-    server_sock.bind(("0.0.0.0", 65432))  # listen on all network interfaces
+    server_sock.bind((MAC_ADDRESS, BLUETOOTH_PORT))  # MAC_ADDRESS is already read at the top
     server_sock.listen(1)
 
     print("[READY] Waiting for the Raspberry Pi to connect ...")
