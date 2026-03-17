@@ -166,8 +166,6 @@ def receive_file(client_sock, save_folder=SAVE_FOLDER, chunk_size=CHUNK_SIZE):
                 return None
 
             # Write this chunk straight to disk.
-            # The 'with open(...)' block keeps the file open, so
-            # we just call .write() repeatedly and it appends each chunk.
             output_file.write(chunk)
 
             # Track how many bytes we've received so far.
