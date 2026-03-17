@@ -25,6 +25,7 @@
 import os
 import struct
 import time
+time.sleep(15)  # wait for Bluetooth to initialize before connecting
 
 from bluetooth.config import (
     LAPTOP_MAC,
@@ -33,6 +34,9 @@ from bluetooth.config import (
     CHUNK_SIZE,
     SOCKET_BUFFER_SIZE,
     HEADER_FORMAT,
+    NAME_LEN_FORMAT,
+    MSG_NOTIFICATION,
+    MSG_FILE,
 )
 
 # Try to load the Bluetooth library.
@@ -40,6 +44,26 @@ from bluetooth.config import (
 # error message rather than a confusing Python crash.
 
 import socket
+
+
+# ================================================================
+#  HELPER: send_notification()
+#
+#  Sends a short text notification to the receiver.
+#  The receiver prints the message without saving a file.
+# ================================================================
+
+def send_notification(sock, message):
+    """
+    Send a short text notification over the socket.
+
+    Protocol: 1-byte MSG_NOTIFICATION + 2-byte length + UTF-8 text.
+    """
+    sock.send(MSG_NOTIFICATION)
+    msg_bytes = message.encode('utf-8')
+    sock.send(struct.pack(NAME_LEN_FORMAT, len(msg_bytes)))
+    sock.sendall(msg_bytes)
+
 
 # ================================================================
 #  MAIN FUNCTION: send_file()
@@ -107,8 +131,22 @@ def send_file(sock, filepath, chunk_size=CHUNK_SIZE):
     #  The receiver reads these 8 bytes first and uses the number
     #  to know when it has received the complete file.
     #
+    # Tell the receiver this is a file transfer, not a notification.
+    sock.send(MSG_FILE)
+
     header = struct.pack(HEADER_FORMAT, file_size)
     sock.send(header)   # send those 8 bytes
+
+
+    # --- Step 1b: Send the filename ---------------------------
+    #
+    #  After the file-size header, send a 2-byte length followed
+    #  by the filename in UTF-8.  This lets the receiver save the
+    #  file with the correct extension (.jpg, .zip, etc.).
+    #
+    name_bytes = filename.encode('utf-8')
+    sock.send(struct.pack(NAME_LEN_FORMAT, len(name_bytes)))
+    sock.send(name_bytes)
 
 
     # --- Step 2: Send the image in chunks ---------------------
@@ -135,8 +173,9 @@ def send_file(sock, filepath, chunk_size=CHUNK_SIZE):
                 break   # exit the while loop — we're done!
 
             # Send this chunk over the Bluetooth connection.
-            # sock.send() pushes these bytes to the laptop.
-            sock.send(chunk)
+            # sendall() keeps retrying until every byte is delivered,
+            # unlike send() which may only send part of the data.
+            sock.sendall(chunk)
 
             # Add this chunk's size to our running total.
             bytes_sent += len(chunk)
@@ -193,7 +232,7 @@ def _show_progress(bytes_done, bytes_total):
     # end='\r' means "go back to the start of the same line"
     # instead of starting a new line.  This makes the bar update
     # in place rather than printing 240 separate lines.
-    print(f"\r  [{bar}] {percent:3d}%  {done_mb:6.1f}/{total_mb:.1f} MB",
+    print(f"\r  [{bar}] {percent:3d}%  {done_mb:6.1f}/{total_mb:5.1f} MB",
           end='', flush=True)
 
 

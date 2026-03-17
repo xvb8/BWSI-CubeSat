@@ -39,9 +39,9 @@ with open("src/bluetooth/mac_address.txt", "r") as f:
 #  same channel, or they won't be able to hear each other.
 #
 #  Valid channels are 1 to 30.
-#  Leave this as 1 unless you have a specific reason to change it.
+#  Leave this as 7 unless you have a specific reason to change it.
 #
-BLUETOOTH_PORT = 1
+BLUETOOTH_PORT = 7
 
 
 # ---------------------------------------------------------------
@@ -131,3 +131,29 @@ SOCKET_BUFFER_SIZE = 262144   # 256 KB send/receive buffer
 #
 HEADER_FORMAT = '>Q'
 HEADER_SIZE   = 8
+
+# --- Filename-length header ------------------------------------
+#
+#  Right after the 8-byte file-size header, the sender transmits
+#  a 2-byte value that tells the receiver how long the filename is,
+#  followed by that many UTF-8 bytes of filename.  This lets the
+#  receiver save the file with the correct extension (.jpg, .zip, etc.).
+#
+#  '>H' is the code for "2-byte big-endian unsigned short" (max 65535).
+#
+NAME_LEN_FORMAT = '>H'
+NAME_LEN_SIZE   = 2
+
+# --- Message type prefix ---------------------------------------
+#
+#  Every message over the socket starts with a single byte that
+#  tells the receiver what kind of message is coming next:
+#
+#    MSG_NOTIFICATION (0x01) — a short text notification
+#        (2-byte length + UTF-8 text)
+#    MSG_FILE (0x02) — a full file transfer
+#        (existing protocol: 8-byte size + 2-byte name len + name + data)
+#
+MSG_NOTIFICATION = b'\x01'
+MSG_FILE         = b'\x02'
+MSG_TYPE_SIZE    = 1

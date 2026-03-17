@@ -130,6 +130,26 @@ def sift_features(img1, img2):
 
 from shapely.geometry import Polygon
 
+def match_histograms(source, target, mask):
+    """
+    Per-channel histogram matching of source to target within the masked region.
+    Adjusts the brightness/color of source so its distribution matches target
+    where mask is nonzero, compensating for exposure or white-balance differences.
+    """
+    result = source.copy()
+    for c in range(source.shape[2]):
+        src_vals = source[mask != 0, c].astype(np.float32)
+        tgt_vals = target[mask != 0, c].astype(np.float32)
+        if len(src_vals) == 0 or len(tgt_vals) == 0:
+            continue
+        src_mean, src_std = src_vals.mean(), src_vals.std()
+        tgt_mean, tgt_std = tgt_vals.mean(), tgt_vals.std()
+        if src_std < 1e-6:
+            continue
+        adjusted = (source[:, :, c].astype(np.float32) - src_mean) * (tgt_std / src_std) + tgt_mean
+        result[:, :, c] = np.clip(adjusted, 0, 255).astype(np.uint8)
+    return result
+
 def get_warp_polygon(img1, H, img2_shape):
     h1, w1 = img1.shape[:2]
     h2, w2 = img2_shape[:2]
@@ -155,7 +175,7 @@ def get_warp_polygon(img1, H, img2_shape):
     polygon_mask = np.zeros((h2, w2), dtype=np.uint8)
     cv2.fillConvexPoly(polygon_mask, pts, 255)
     kernel = np.ones((3,3), np.uint8)
-    polygon_mask = cv2.erode(polygon_mask, kernel, iterations=1) # Erode to remove edge pixels that might be noisy
+    polygon_mask = cv2.erode(polygon_mask, kernel, iterations=30) # Erode to remove border artifacts from warping interpolation
 
     return polygon_mask
 
@@ -185,7 +205,10 @@ def compare_images(img1, img2, intersection_mask, inlier_pts):
         x, y = int(pt[0]), int(pt[1])
         cv2.circle(kp_exclusion, (x, y), radius=KP_EXCLUDE_RADIUS, color=0, thickness=-1)
 
-    difference = cv2.absdiff(img1, img2)
+    # Blur both images to suppress sub-pixel misalignment and JPEG block artifacts
+    img1_blur = cv2.GaussianBlur(img1, (5, 5), 0)
+    img2_blur = cv2.GaussianBlur(img2, (5, 5), 0)
+    difference = cv2.absdiff(img1_blur, img2_blur)
 
     # Zero out the difference in black/invalid regions
     difference[intersection_mask == 0] = 0
@@ -194,18 +217,18 @@ def compare_images(img1, img2, intersection_mask, inlier_pts):
     difference[kp_exclusion == 0] = 0
     diff_mask = np.any(difference != 0, axis=2)
 
-    diff_mask = np.any(difference != 0, axis=2)
-    # diff_gray = cv2.cvtColor(difference, cv2.COLOR_BGR2GRAY)
-    # diff_mask = diff_gray > THRESHOLD
+    # Morphological opening to remove small noise speckles (JPEG artifacts, interpolation noise)
+    morph_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    diff_mask_u8 = diff_mask.astype(np.uint8) * 255
+    diff_mask_u8 = cv2.morphologyEx(diff_mask_u8, cv2.MORPH_OPEN, morph_kernel, iterations=2)
 
+    # Remove small connected components below MIN_AREA
+    nlabels, labels, stats, _ = cv2.connectedComponentsWithStats(diff_mask_u8, connectivity=8)
+    for i in range(1, nlabels):
+        if stats[i, cv2.CC_STAT_AREA] < MIN_COMPONENT_AREA:
+            diff_mask_u8[labels == i] = 0
 
-    # diff_gray = cv2.cvtColor(difference, cv2.COLOR_BGR2GRAY)
-    # adaptive = cv2.adaptiveThreshold(diff_gray, 255,
-    #     cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-    #     cv2.THRESH_BINARY,
-    #     blockSize=51,
-    #     C=-20)
-    # diff_mask = adaptive.astype(bool)
+    diff_mask = diff_mask_u8 > 0
 
     if not diff_mask.any():
         print("no new pixels detected")
@@ -241,6 +264,7 @@ def compare_images(img1, img2, intersection_mask, inlier_pts):
 
 THRESHOLD = 30 # Color point value
 KP_EXCLUDE_RADIUS = 0 # Pixels
+MIN_COMPONENT_AREA = 500 # Minimum pixel area for a detected region to be kept
 
 img1 = cv2.imread('src/image1.jpg')
 img2 = cv2.imread('src/image2.jpg')
@@ -252,6 +276,9 @@ H_total = homography_refined @ homography
 h, w = img2.shape[:2]
 warped_img1 = cv2.warpPerspective(img1, H_total, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
 polygon_mask = get_warp_polygon(img1, H_total, img2.shape)  # recompute with refined H
+
+# Normalize warped_img1 brightness/color to match img2 in the overlap region
+warped_img1 = match_histograms(warped_img1, img2, polygon_mask)
 cv2.imwrite('src/warped_image1.png', warped_img1)
 
 

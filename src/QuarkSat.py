@@ -24,9 +24,9 @@ from adafruit_lsm6ds.lsm6dsox import LSM6DSOX as LSM6DS
 from adafruit_lis3mdl import LIS3MDL
 from git import Repo
 from picamera2 import Picamera2
-from bluetooth.pi_sender import send_file
+from bluetooth.pi_sender import send_file, send_notification
 import socket
-from bluetooth.config import LAPTOP_MAC, BLUETOOTH_PORT
+from bluetooth.config import LAPTOP_MAC, BLUETOOTH_PORT, SOCKET_BUFFER_SIZE
 import os
 
 
@@ -101,9 +101,28 @@ def take_photo(save_file = True):
         print("Error capturing image: ", e)
     return img_arr
 
-def compress_directly(data):
+def add_file_to_zip(zip_path: str, file_path: str, arcname: str = None) -> None:
+    """
+    Add a file to a zip archive. Creates the archive if it doesn't exist.
+
+    Args:
+        zip_path: Path to the zip archive (created if it doesn't exist)
+        file_path: Path to the file to add
+        arcname:   Name to use inside the archive (defaults to the file's basename)
+    """
+    if not os.path.isfile(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}")
+
+    arc_entry = arcname or os.path.basename(file_path)
+
+    mode = "a" if os.path.exists(zip_path) else "w"
+    with zipfile.ZipFile(zip_path, mode, compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.write(file_path, arc_entry)
+        print(f"Added '{file_path}' to '{zip_path}' as '{arc_entry}'")
+
+def compress_directly(data, name):
     with zipfile.ZipFile('QuarkSat_compressed_data.zip', 'w', compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr('data.txt', data)
+        zf.writestr(name, data)
 
 def compress_file(input_file):
     with zipfile.ZipFile('QuarkSat_compressed_file.zip', 'w', compression=zipfile.ZIP_DEFLATED) as zf:
@@ -140,28 +159,38 @@ def main():
     #                 flag3 = False
     # 2. Connect to the laptop
     sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, SOCKET_BUFFER_SIZE)
     print("Connecting to laptop...")
     sock.connect((LAPTOP_MAC, BLUETOOTH_PORT))
     images = []
     print("Connected to laptop, starting main loop...")
     try:
         while True:
-            if len(images) == 2: # Keep only the last two images for comparison
+            if len(images) == 1: # Keep only the last two images for comparison
                 path1 = img_gen("QuarkSat1")
-                path2 = img_gen("QuarkSat2")
+                # path2 = img_gen("QuarkSat2")
                 
                 cv2.imwrite(path1, images[0])
-                cv2.imwrite(path2, images[1])
+                # cv2.imwrite(path2, images[1])
                 
-                send_file(sock, path1)
+                zip_path = f'{REPO_PATH}/{FOLDER_PATH}/QuarkSat_images.zip'
+                if os.path.exists(zip_path):
+                    os.remove(zip_path)
+
+                add_file_to_zip(zip_path, path1, arcname=os.path.basename(path1))
+                # add_file_to_zip(zip_path, path2, arcname=os.path.basename(path2))
+                send_file(sock, f'{REPO_PATH}/{FOLDER_PATH}/QuarkSat_images.zip')
+                # Signal we're done sending, then wait for the receiver
+                # to finish reading all buffered data before closing.
+                sock.shutdown(socket.SHUT_WR)
+                # Wait for the receiver to close its end (recv returns b'').
+                try:
+                    while sock.recv(1024):
+                        pass
+                except OSError:
+                    pass
                 sock.close()
-                print("Reconnecting to laptop...")
-                sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
-                sock.connect((LAPTOP_MAC, BLUETOOTH_PORT))
                 images = []
-                print("Connected to laptop, sending second image...")
-                send_file(sock, path2)
-                sock.close()
                 git_push()
                 print("Freezing...")
                 while True:
@@ -179,6 +208,7 @@ def main():
                 except Exception as e:
                     print("Error capturing image: ", e)
                 print("Photo taken")
+                send_notification(sock, f"Photo taken ({len(images)}/2)")
     finally:
         if sock.fileno() != -1:
             print("Closing socket connection...")

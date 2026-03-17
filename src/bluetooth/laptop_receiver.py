@@ -15,6 +15,8 @@
 #  STOP:
 #    Press Ctrl+C at any time.
 # ================================================================
+# Use "add device on laptop" to pair your Pi and laptop over Bluetooth first.
+# Then run this script on the laptop, and pi_sender.py on the Pi.
 
 
 # --- What these imports do ------------------------------------
@@ -35,6 +37,11 @@ from config import (
     SOCKET_BUFFER_SIZE,
     HEADER_FORMAT,
     HEADER_SIZE,
+    NAME_LEN_FORMAT,
+    NAME_LEN_SIZE,
+    MSG_NOTIFICATION,
+    MSG_FILE,
+    MSG_TYPE_SIZE,
 )
 
 import socket
@@ -90,6 +97,27 @@ def receive_file(client_sock, save_folder=SAVE_FOLDER, chunk_size=CHUNK_SIZE):
     # It returns a tuple like (15728640,) so we use [0] to get just the number.
     file_size = struct.unpack(HEADER_FORMAT, raw_header)[0]
 
+    # --- Step 1b: Read the filename ---------------------------
+    #
+    #  The sender transmits a 2-byte length followed by a UTF-8
+    #  filename.  We use the extension to save the file correctly
+    #  (.jpg, .zip, etc.).
+    #
+    raw_name_len = _receive_exact(client_sock, NAME_LEN_SIZE)
+    if raw_name_len is None:
+        print("[ERROR] Connection closed before the filename arrived.")
+        return None
+
+    name_len = struct.unpack(NAME_LEN_FORMAT, raw_name_len)[0]
+    raw_name = _receive_exact(client_sock, name_len)
+    if raw_name is None:
+        print("[ERROR] Connection closed while reading the filename.")
+        return None
+
+    original_name = raw_name.decode('utf-8')
+    _, ext = os.path.splitext(original_name)
+
+    print(f"[RECV] File name : {original_name}")
     print(f"[RECV] File size : {file_size:,} bytes  ({file_size / 1024 / 1024:.2f} MB)")
     print(f"[RECV] Chunk     : {chunk_size // 1024} KB per chunk")
     print(f"[RECV] Expecting : ~{file_size // chunk_size + 1} chunks")
@@ -100,13 +128,10 @@ def receive_file(client_sock, save_folder=SAVE_FOLDER, chunk_size=CHUNK_SIZE):
     #
     #  We add a timestamp to each filename so files are never
     #  overwritten if you send multiple photos.
-    #
-    #  datetime.now() gets the current time.
-    #  .strftime() formats it as a string, e.g. "20260314_143025"
-    #                                              YYYYMMDD_HHMMSS
+    #  The extension comes from the sender so the file type is correct.
     #
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_path  = os.path.join(save_folder, f"received_{timestamp}.jpg")
+    out_path  = os.path.join(save_folder, f"received_{timestamp}{ext}")
 
 
     # --- Step 2: Receive the image bytes and write to disk ----
@@ -217,7 +242,7 @@ def _show_progress(bytes_done, bytes_total):
 
     # \r moves the cursor back to the start of the line so the
     # next print overwrites this one — that's what makes it animate.
-    print(f"\r  [{bar}] {percent:3d}%  {done_mb:6.1f}/{total_mb:.1f} MB",
+    print(f"\r  [{bar}] {percent:3d}%  {done_mb:6.1f}/{total_mb:5.1f} MB",
           end='', flush=True)
 
 
@@ -274,13 +299,50 @@ if __name__ == "__main__":
             #   client_sock — a new socket just for this Pi session
             #   client_addr — the Pi's Bluetooth MAC address
             client_sock, client_addr = server_sock.accept()
+            client_sock.settimeout(300)
+
+
             print(f"[INFO] Pi connected from {client_addr}")
 
             # Enlarge the receive buffer on the per-connection socket too.
             client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, SOCKET_BUFFER_SIZE)
 
-            # Receive the photo and save it.
-            saved_path = receive_file(client_sock)
+            # --- Message loop: handle notifications and file transfers ---
+            #
+            #  The Pi may send multiple messages over one connection:
+            #    - Notifications (e.g. "Photo taken") before the file
+            #    - Exactly one file transfer at the end
+            #
+            #  Each message starts with a 1-byte type indicator.
+            #
+            saved_path = None
+            while True:
+                msg_type = _receive_exact(client_sock, MSG_TYPE_SIZE)
+                if msg_type is None:
+                    # Connection closed — Pi is done.
+                    break
+
+                if msg_type == MSG_NOTIFICATION:
+                    # Read 2-byte length + UTF-8 message text
+                    raw_len = _receive_exact(client_sock, NAME_LEN_SIZE)
+                    if raw_len is None:
+                        break
+                    msg_len = struct.unpack(NAME_LEN_FORMAT, raw_len)[0]
+                    raw_msg = _receive_exact(client_sock, msg_len)
+                    if raw_msg is None:
+                        break
+                    print(f"[PI] {raw_msg.decode('utf-8')}")
+
+                elif msg_type == MSG_FILE:
+                    # Full file transfer follows (existing protocol).
+                    saved_path = receive_file(client_sock)
+                    # After a file transfer the Pi shuts down the socket,
+                    # so we break out of the message loop.
+                    break
+
+                else:
+                    print(f"[WARN] Unknown message type: {msg_type!r}")
+                    break
 
             # Close the connection with this Pi.
             # This does NOT shut down the server — we loop back
@@ -289,6 +351,8 @@ if __name__ == "__main__":
 
             if saved_path:
                 print(f"\n✓  Photo saved successfully!\n")
+            elif saved_path is None and msg_type is None:
+                print(f"\n[INFO] Pi disconnected.\n")
             else:
                 print(f"\n✗  Transfer failed — file may be incomplete.\n")
 
