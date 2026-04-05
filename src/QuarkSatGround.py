@@ -4,6 +4,13 @@ from concurrent.futures import ThreadPoolExecutor
 
 cv2.setNumThreads(0)  # 0 = use all available cores for OpenCV's internal parallelism
 
+_HAS_XIMGPROC = hasattr(cv2, 'ximgproc')
+
+def _smooth(img):
+    if _HAS_XIMGPROC:
+        return cv2.ximgproc.guidedFilter(img, img, 4, 750)
+    return cv2.bilateralFilter(img, d=9, sigmaColor=75, sigmaSpace=75)
+
 THRESHOLD = 30
 KP_EXCLUDE_RADIUS = 0
 MIN_COMPONENT_AREA = 500
@@ -221,10 +228,10 @@ def compare_images(img1, img2, intersection_mask, inlier_pts):
         x, y = int(pt[0]), int(pt[1])
         cv2.circle(kp_exclusion, (x, y), radius=KP_EXCLUDE_RADIUS, color=0, thickness=-1)
 
-    # Guided filter: edge-preserving smoothing, much faster than bilateral
+    # Edge-preserving smoothing (guidedFilter if available, else bilateralFilter)
     with ThreadPoolExecutor(max_workers=2) as pool:
-        f1 = pool.submit(cv2.ximgproc.guidedFilter, img1, img1, 4, 750)
-        f2 = pool.submit(cv2.ximgproc.guidedFilter, img2, img2, 4, 750)
+        f1 = pool.submit(_smooth, img1)
+        f2 = pool.submit(_smooth, img2)
         img1_blur = f1.result()
         img2_blur = f2.result()
     difference = cv2.absdiff(img1_blur, img2_blur)
