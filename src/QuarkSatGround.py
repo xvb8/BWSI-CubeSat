@@ -2,6 +2,8 @@ import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
+cv2.setNumThreads(0)  # 0 = use all available cores for OpenCV's internal parallelism
+
 THRESHOLD = 30
 KP_EXCLUDE_RADIUS = 0
 MIN_COMPONENT_AREA = 500
@@ -84,12 +86,18 @@ def sift_features(img1, img2):
         f2 = pool.submit(convert_to_grayscale, img2)
         gray1 = f1.result()
         gray2 = f2.result()
+
+    # Downscale for SIFT — process 4x fewer pixels; SIFT is scale-invariant
+    scale_factor = 0.5
+    gray1_small = cv2.resize(gray1, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_AREA)
+    gray2_small = cv2.resize(gray2, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_AREA)
+
     print("Creating SIFT detector...")
-    sift = cv2.SIFT_create() #nfeatures=0, contrastThreshold=0.03, edgeThreshold=20
+    sift = cv2.SIFT_create(nfeatures=5000)
     print("Detecting keypoints and computing descriptors (parallel)...")
     with ThreadPoolExecutor(max_workers=2) as pool:
-        f1 = pool.submit(sift.detectAndCompute, gray1, None)
-        f2 = pool.submit(sift.detectAndCompute, gray2, None)
+        f1 = pool.submit(sift.detectAndCompute, gray1_small, None)
+        f2 = pool.submit(sift.detectAndCompute, gray2_small, None)
         kp1, des1 = f1.result()
         kp2, des2 = f2.result()
 
@@ -113,11 +121,11 @@ def sift_features(img1, img2):
         if m.distance < 0.5 * n.distance:
             good_matches.append(m)
 
-    # Extract the matched keypoints and their corresponding descriptors
-    print("Extracting matched (src) keypoints...")
-    src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches])  # 1st image keypoints
-    print("Extracting matched (dst) keypoints...")
-    dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]) # 2nd image keypoints
+    # Extract matched keypoints and scale back to full resolution
+    print("Extracting matched keypoints...")
+    inv_scale = 1.0 / scale_factor
+    src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]) * inv_scale
+    dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]) * inv_scale
 
 
     print("Computing homography with RANSAC...")
@@ -213,10 +221,10 @@ def compare_images(img1, img2, intersection_mask, inlier_pts):
         x, y = int(pt[0]), int(pt[1])
         cv2.circle(kp_exclusion, (x, y), radius=KP_EXCLUDE_RADIUS, color=0, thickness=-1)
 
-    # Blur both images to suppress sub-pixel misalignment and JPEG block artifacts
+    # Guided filter: edge-preserving smoothing, much faster than bilateral
     with ThreadPoolExecutor(max_workers=2) as pool:
-        f1 = pool.submit(cv2.GaussianBlur, img1, (5, 5), 0)
-        f2 = pool.submit(cv2.GaussianBlur, img2, (5, 5), 0)
+        f1 = pool.submit(cv2.ximgproc.guidedFilter, img1, img1, 4, 750)
+        f2 = pool.submit(cv2.ximgproc.guidedFilter, img2, img2, 4, 750)
         img1_blur = f1.result()
         img2_blur = f2.result()
     difference = cv2.absdiff(img1_blur, img2_blur)
@@ -233,11 +241,11 @@ def compare_images(img1, img2, intersection_mask, inlier_pts):
     diff_mask_u8 = diff_mask.astype(np.uint8) * 255
     diff_mask_u8 = cv2.morphologyEx(diff_mask_u8, cv2.MORPH_OPEN, morph_kernel, iterations=2)
 
-    # Remove small connected components below MIN_AREA
+    # Remove small connected components below MIN_AREA (vectorized)
     nlabels, labels, stats, _ = cv2.connectedComponentsWithStats(diff_mask_u8, connectivity=8)
-    for i in range(1, nlabels):
-        if stats[i, cv2.CC_STAT_AREA] < MIN_COMPONENT_AREA:
-            diff_mask_u8[labels == i] = 0
+    small = np.where(stats[1:, cv2.CC_STAT_AREA] < MIN_COMPONENT_AREA)[0] + 1
+    if len(small) > 0:
+        diff_mask_u8[np.isin(labels, small)] = 0
 
     diff_mask = diff_mask_u8 > 0
 
