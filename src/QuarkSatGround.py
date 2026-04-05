@@ -1,5 +1,10 @@
 import cv2
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor
+
+THRESHOLD = 30
+KP_EXCLUDE_RADIUS = 0
+MIN_COMPONENT_AREA = 500
 
 def convert_to_grayscale(image):
     grey = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -12,7 +17,7 @@ def refine_alignment(warped_img1, img2, mask, num_levels=3):
     # Start from identity; warped_img1 is already roughly aligned
     H_refined = np.eye(3, 3, dtype=np.float32)
 
-    criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 1000, 1e-7)
+    criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 200, 1e-5)
 
     gray1_pyr = [gray1]
     gray2_pyr = [gray2]
@@ -27,11 +32,11 @@ def refine_alignment(warped_img1, img2, mask, num_levels=3):
      # Refine from coarsest to finest level
     for level, (g1, g2, m) in enumerate(zip(gray1_pyr, gray2_pyr, mask_pyr)):
 
-        # Scale H for this pyramid level
+        # Properly scale the homography for this pyramid level
         scale = 2 ** (num_levels - 1 - level)
-        H_scaled = H_refined.copy()
-        H_scaled[0, 2] /= scale
-        H_scaled[1, 2] /= scale
+        S = np.array([[1.0/scale, 0, 0], [0, 1.0/scale, 0], [0, 0, 1]], dtype=np.float32)
+        S_inv = np.array([[scale, 0, 0], [0, scale, 0], [0, 0, 1]], dtype=np.float32)
+        H_scaled = S @ H_refined @ S_inv
         try:
             _, H = cv2.findTransformECC(
                 g2, g1,
@@ -41,14 +46,12 @@ def refine_alignment(warped_img1, img2, mask, num_levels=3):
                 m
             )
 
-            H_refined = H.copy()
-            H_refined[0, 2] *= scale
-            H_refined[1, 2] *= scale
+            # Scale back to full resolution
+            H_refined = S_inv @ H @ S
 
         except cv2.error:
             print("[WARN] ECC did not converge — using unrefined warp")
             continue
-            # Scale H back up for the next level
 
 
     h, w = img2.shape[:2]
@@ -76,14 +79,19 @@ def compute_homography(src_pts, dst_pts, reproj_threshold=2.0):
 
 def sift_features(img1, img2):
     print("Converting images to grayscale...")
-    gray1 = convert_to_grayscale(img1) # Convert the images to grayscale for SIFT
-    gray2 = convert_to_grayscale(img2)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        f1 = pool.submit(convert_to_grayscale, img1)
+        f2 = pool.submit(convert_to_grayscale, img2)
+        gray1 = f1.result()
+        gray2 = f2.result()
     print("Creating SIFT detector...")
     sift = cv2.SIFT_create() #nfeatures=0, contrastThreshold=0.03, edgeThreshold=20
-    print("Detecting keypoints and computing descriptors (1/2)...")
-    kp1, des1 = sift.detectAndCompute(gray1, None) # Keypoint detection and descriptor computation
-    print("Detecting keypoints and computing descriptors (2/2)...")
-    kp2, des2 = sift.detectAndCompute(gray2, None)
+    print("Detecting keypoints and computing descriptors (parallel)...")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        f1 = pool.submit(sift.detectAndCompute, gray1, None)
+        f2 = pool.submit(sift.detectAndCompute, gray2, None)
+        kp1, des1 = f1.result()
+        kp2, des2 = f2.result()
 
     if des1 is None or des2 is None:
         raise ValueError("SIFT could not find descriptors in one of the images")
@@ -206,8 +214,11 @@ def compare_images(img1, img2, intersection_mask, inlier_pts):
         cv2.circle(kp_exclusion, (x, y), radius=KP_EXCLUDE_RADIUS, color=0, thickness=-1)
 
     # Blur both images to suppress sub-pixel misalignment and JPEG block artifacts
-    img1_blur = cv2.GaussianBlur(img1, (5, 5), 0)
-    img2_blur = cv2.GaussianBlur(img2, (5, 5), 0)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        f1 = pool.submit(cv2.GaussianBlur, img1, (5, 5), 0)
+        f2 = pool.submit(cv2.GaussianBlur, img2, (5, 5), 0)
+        img1_blur = f1.result()
+        img2_blur = f2.result()
     difference = cv2.absdiff(img1_blur, img2_blur)
 
     # Zero out the difference in black/invalid regions
@@ -254,35 +265,33 @@ def compare_images(img1, img2, intersection_mask, inlier_pts):
         else:
             cv2.circle(vis, (x, y), radius=KP_EXCLUDE_RADIUS, color=(0, 255, 0), thickness=-1)
 
-    cv2.imwrite('src/diff_visualisation.png', vis)
-    print("Visualisation saved to src/diff_visualisation.png")
+    return vis
 
 # with open('image1.arr' , 'rb') as f:
 #     img1 = np.load(f)
 # with open('image2.arr' , 'rb') as f:
 #     img2 = np.load(f)
 
-THRESHOLD = 30 # Color point value
-KP_EXCLUDE_RADIUS = 0 # Pixels
-MIN_COMPONENT_AREA = 500 # Minimum pixel area for a detected region to be kept
+def main(img1, img2):
+    warped_img1, homography, _, dst_points = sift_features(img1, img2)
+    intersection_mask = get_warp_polygon(img1, homography, img2.shape)
+    _, homography_refined = refine_alignment(warped_img1, img2, intersection_mask)
+    H_total = homography_refined @ homography
+    h, w = img2.shape[:2]
+    warped_img1 = cv2.warpPerspective(img1, H_total, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+    polygon_mask = get_warp_polygon(img1, H_total, img2.shape)  # recompute with refined H
 
-img1 = cv2.imread('src/image1.jpg')
-img2 = cv2.imread('src/image2.jpg')
-
-warped_img1, homography, _, dst_points = sift_features(img1, img2)
-intersection_mask = get_warp_polygon(img1, homography, img2.shape)
-_, homography_refined = refine_alignment(warped_img1, img2, intersection_mask)
-H_total = homography_refined @ homography
-h, w = img2.shape[:2]
-warped_img1 = cv2.warpPerspective(img1, H_total, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
-polygon_mask = get_warp_polygon(img1, H_total, img2.shape)  # recompute with refined H
-
-# Normalize warped_img1 brightness/color to match img2 in the overlap region
-warped_img1 = match_histograms(warped_img1, img2, polygon_mask)
-cv2.imwrite('src/warped_image1.png', warped_img1)
+    # Normalize warped_img1 brightness/color to match img2 in the overlap region
+    warped_img1 = match_histograms(warped_img1, img2, polygon_mask)
+    cv2.imwrite('src/warped_image1.png', warped_img1)
 
 
-print("Comparing images...")
-compare_images(warped_img1, img2, polygon_mask, dst_points)
+    print("Comparing images...")
+    return compare_images(warped_img1, img2, polygon_mask, dst_points)
 
-
+if __name__ == "__main__":
+    img1 = cv2.imread('src/image1.jpg')
+    img2 = cv2.imread('src/image2.jpg')
+    result = main(img1, img2)
+    cv2.imwrite('src/diff_visualisation.png', result)
+    print("Visualisation saved to src/diff_visualisation.png")
