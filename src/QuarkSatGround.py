@@ -2,6 +2,22 @@ import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
+import threading
+
+inlier_src = None
+inlier_dst = None
+sift_done_event = threading.Event()
+warp_done_event = threading.Event()
+histogram_done_event = threading.Event()
+initial_homography = None
+refined_homography = None
+cached_warped_img = None
+cached_target_img = None
+cached_histmatched_img = None
+cached_histtarget_img = None
+
+state_machine = "initial"  # can be "initial", "sift_done", "refined_done"
+
 cv2.setNumThreads(0)  # 0 = use all available cores for OpenCV's internal parallelism
 
 _HAS_XIMGPROC = hasattr(cv2, 'ximgproc')
@@ -134,13 +150,20 @@ def sift_features(img1, img2):
     src_pts = np.float32([kp1[m.queryIdx].pt for m in good_matches]) * inv_scale
     dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]) * inv_scale
 
-
     print("Computing homography with RANSAC...")
+    global state_machine
+    state_machine = "compute_homography_matrix"
     H, ransac_mask, inlier_count = compute_homography(src_pts, dst_pts)
+    global initial_homography
+    initial_homography = H
 
     inlier_mask = ransac_mask.ravel().astype(bool)
+    global inlier_src, inlier_dst
     inlier_src = src_pts[inlier_mask]  # keypoint locations in img1
     inlier_dst = dst_pts[inlier_mask]  # corresponding locations in img2
+    
+    state_machine = "sift_done_start_homography"
+    sift_done_event.set()
 
     print(f"Homography matrix:\n{H}")
     print(f"Inliers: {inlier_count} / {len(good_matches)}")
@@ -203,7 +226,7 @@ def get_warp_polygon(img1, H, img2_shape):
     return polygon_mask
 
 def compare_images(img1, img2, intersection_mask, inlier_pts):
-
+    global state_machine
     # # Create a mask of ones (valid pixels) and warp it the same way H warps img1
     # h, w = img2.shape[:2]
     # canvas = np.ones((img1.shape[0], img1.shape[1]), dtype=np.uint8) * 255
@@ -287,20 +310,56 @@ def compare_images(img1, img2, intersection_mask, inlier_pts):
 # with open('image2.arr' , 'rb') as f:
 #     img2 = np.load(f)
 
+def return_keypoint_map(img1, img2):
+    """
+    Draw green circles on copies of the original images at each inlier keypoint location.
+    """
+    keypoint_map_1 = img1.copy()
+    keypoint_map_2 = img2.copy()
+    if inlier_dst is None or inlier_src is None:
+        return None
+
+    for pt in inlier_dst:
+        x, y = int(pt[0]), int(pt[1])
+        cv2.circle(keypoint_map_1, (x, y), radius=10, color=(0, 255, 0), thickness=-1)
+    for pt in inlier_src:
+        x, y = int(pt[0]), int(pt[1])
+        cv2.circle(keypoint_map_2, (x, y), radius=10, color=(0, 255, 0), thickness=-1)
+    return (keypoint_map_1, keypoint_map_2)
+
 def main(img1, img2):
+    global state_machine
+    state_machine = "loading_start"
     warped_img1, homography, _, dst_points = sift_features(img1, img2)
     intersection_mask = get_warp_polygon(img1, homography, img2.shape)
+
+    state_machine = "refining_alignment"
     _, homography_refined = refine_alignment(warped_img1, img2, intersection_mask)
     H_total = homography_refined @ homography
+    global refined_homography
+    refined_homography = H_total
     h, w = img2.shape[:2]
+    state_machine = "warping_image"
     warped_img1 = cv2.warpPerspective(img1, H_total, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
     polygon_mask = get_warp_polygon(img1, H_total, img2.shape)  # recompute with refined H
 
+    global cached_warped_img, cached_target_img
+    cached_warped_img = warped_img1.copy()
+    cached_target_img = img2.copy()
+    warp_done_event.set()
+
     # Normalize warped_img1 brightness/color to match img2 in the overlap region
+    state_machine = "matching_histograms"
     warped_img1 = match_histograms(warped_img1, img2, polygon_mask)
     cv2.imwrite('src/warped_image1.png', warped_img1)
 
+    global cached_histmatched_img, cached_histtarget_img
+    cached_histmatched_img = warped_img1.copy()
+    cached_histtarget_img = img2.copy()
+    state_machine = "histogram_done"
+    histogram_done_event.set()
 
+    state_machine = "comparing_images"
     print("Comparing images...")
     return compare_images(warped_img1, img2, polygon_mask, dst_points)
 
