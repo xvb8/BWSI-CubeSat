@@ -1,3 +1,5 @@
+import queue
+
 import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
@@ -16,7 +18,34 @@ cached_target_img = None
 cached_histmatched_img = None
 cached_histtarget_img = None
 
-state_machine = "initial"  # can be "initial", "sift_done", "refined_done"
+state_machine = "initial"
+
+# --- Pub/sub for state changes (used by SSE endpoint) ---
+_state_subscribers = []
+_state_sub_lock = threading.Lock()
+
+def subscribe_state():
+    q = queue.Queue()
+    with _state_sub_lock:
+        _state_subscribers.append(q)
+    return q
+
+def unsubscribe_state(q):
+    with _state_sub_lock:
+        try:
+            _state_subscribers.remove(q)
+        except ValueError:
+            pass
+
+def _notify(msg):
+    with _state_sub_lock:
+        for q in list(_state_subscribers):
+            q.put(msg)
+
+def set_state(new_state):
+    global state_machine
+    state_machine = new_state
+    _notify(new_state)
 
 cv2.setNumThreads(0)  # 0 = use all available cores for OpenCV's internal parallelism
 
@@ -151,8 +180,7 @@ def sift_features(img1, img2):
     dst_pts = np.float32([kp2[m.trainIdx].pt for m in good_matches]) * inv_scale
 
     print("Computing homography with RANSAC...")
-    global state_machine
-    state_machine = "compute_homography_matrix"
+    set_state("compute_homography_matrix")
     H, ransac_mask, inlier_count = compute_homography(src_pts, dst_pts)
     global initial_homography
     initial_homography = H
@@ -162,7 +190,7 @@ def sift_features(img1, img2):
     inlier_src = src_pts[inlier_mask]  # keypoint locations in img1
     inlier_dst = dst_pts[inlier_mask]  # corresponding locations in img2
     
-    state_machine = "sift_done_start_homography"
+    set_state("sift_done_start_homography")
     sift_done_event.set()
 
     print(f"Homography matrix:\n{H}")
@@ -328,18 +356,17 @@ def return_keypoint_map(img1, img2):
     return (keypoint_map_1, keypoint_map_2)
 
 def main(img1, img2):
-    global state_machine
-    state_machine = "loading_start"
+    set_state("loading_start")
     warped_img1, homography, _, dst_points = sift_features(img1, img2)
     intersection_mask = get_warp_polygon(img1, homography, img2.shape)
 
-    state_machine = "refining_alignment"
+    set_state("refining_alignment")
     _, homography_refined = refine_alignment(warped_img1, img2, intersection_mask)
     H_total = homography_refined @ homography
     global refined_homography
     refined_homography = H_total
     h, w = img2.shape[:2]
-    state_machine = "warping_image"
+    set_state("warping_image")
     warped_img1 = cv2.warpPerspective(img1, H_total, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
     polygon_mask = get_warp_polygon(img1, H_total, img2.shape)  # recompute with refined H
 
@@ -349,17 +376,17 @@ def main(img1, img2):
     warp_done_event.set()
 
     # Normalize warped_img1 brightness/color to match img2 in the overlap region
-    state_machine = "matching_histograms"
+    set_state("matching_histograms")
     warped_img1 = match_histograms(warped_img1, img2, polygon_mask)
     cv2.imwrite('src/warped_image1.png', warped_img1)
 
     global cached_histmatched_img, cached_histtarget_img
     cached_histmatched_img = warped_img1.copy()
     cached_histtarget_img = img2.copy()
-    state_machine = "histogram_done"
+    set_state("histogram_done")
     histogram_done_event.set()
 
-    state_machine = "comparing_images"
+    set_state("comparing_images")
     print("Comparing images...")
     return compare_images(warped_img1, img2, polygon_mask, dst_points)
 
